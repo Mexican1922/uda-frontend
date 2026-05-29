@@ -1,0 +1,629 @@
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Music2, Waves, Zap, Target, Moon, Star, LayoutGrid, Play,
+} from "lucide-react";
+import {
+  recommendationsApi,
+  historyApi,
+  libraryApi,
+  musicApi,
+} from "../services/api";
+import { usePlayerStore } from "../store/playerStore";
+import { useAuthStore } from "../store/authStore";
+import type { Song } from "../types";
+import SongRow  from "../components/ui/SongRow";
+import SongCard from "../components/ui/SongCard";
+import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
+import { clientCache, TTL } from "../services/cache";
+
+// ── Cache helpers (thin wrappers around the shared clientCache) ───────────────
+// TTL is stored at set-time; the ttlMs arg to cacheGet is kept for call-site
+// clarity but is no longer used at read-time (clientCache handles expiry).
+function cacheGet<T>(key: string, _ttlMs?: number): T | null {
+  return clientCache.get<T>(key);
+}
+function cacheSet<T>(key: string, data: T, ttlMs = TTL.LONG) {
+  clientCache.set(key, data, ttlMs);
+}
+
+const TTL_LONG  = TTL.LONG;   // 15 min — trending, albums, new-this-week
+const TTL_SHORT = TTL.MEDIUM; // 5 min  — personalised recs (mood/default)
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface Mood {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}
+
+interface ArtistMix {
+  artist: string;
+  playCount: number;
+  thumbnail?: string;   // a song thumbnail from this artist's history
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const MOODS: Mood[] = [
+  { label: "All",        value: "",           icon: <LayoutGrid size={13} /> },
+  { label: "Afrobeats",  value: "afrobeats",  icon: <Music2    size={13} /> },
+  { label: "Chill",      value: "chill",      icon: <Waves     size={13} /> },
+  { label: "Energetic",  value: "energetic",  icon: <Zap       size={13} /> },
+  { label: "Focus",      value: "focus",      icon: <Target    size={13} /> },
+  { label: "Late Night", value: "late night", icon: <Moon      size={13} /> },
+  { label: "Party",      value: "party",      icon: <Star      size={13} /> },
+];
+
+// 6 preset gradients — picked by a hash of the artist name
+const MIX_GRADIENTS: [string, string][] = [
+  ["#c9a84c", "#6b3a0f"],   // gold
+  ["#1a7a4a", "#0a3020"],   // emerald
+  ["#7c3aed", "#3b0764"],   // violet
+  ["#be123c", "#4c0519"],   // crimson
+  ["#0369a1", "#082f49"],   // ocean
+  ["#c2410c", "#431407"],   // burnt orange
+];
+
+function artistGradient(name: string): [string, string] {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return MIX_GRADIENTS[h % MIX_GRADIENTS.length];
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function HomePage() {
+  const { playSong } = usePlayerStore();
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
+
+  // Recently played
+  const [recentlyPlayed, setRecentlyPlayed] = useState<Song[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  // Artist mixes (derived from history)
+  const [artistMixes, setArtistMixes] = useState<ArtistMix[]>([]);
+
+  // New This Week
+  const [newThisWeek, setNewThisWeek]     = useState<Song[]>([]);
+  const [loadingNew, setLoadingNew]       = useState(true);
+  const [errorNew, setErrorNew]           = useState(false);
+
+  // Trending in Naija
+  const [trending, setTrending]           = useState<Song[]>([]);
+  const [loadingTrending, setLoadingTrending] = useState(true);
+  const [errorTrending, setErrorTrending] = useState(false);
+
+  // Top Albums
+  const [albums, setAlbums]               = useState<Song[]>([]);
+  const [loadingAlbums, setLoadingAlbums] = useState(true);
+  const [errorAlbums, setErrorAlbums]     = useState(false);
+
+  // Made for You / mood
+  const [recommendations, setRecommendations] = useState<Song[]>([]);
+  const [loadingRec, setLoadingRec]           = useState(true);
+  const [activeMood, setActiveMood]           = useState("");
+
+  // Playlist modal
+  const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
+
+  // Whether the user just clicked a mood pill (triggers auto-play)
+  const moodClickedRef = useRef(false);
+
+  // ── Fetch: history + artist mixes ────────────────────────────────────────
+  useEffect(() => {
+    // Use the shared cache so ProfilePage can reuse the same response
+    const cachedHistory = clientCache.get<any[]>("history");
+    const historyPromise = cachedHistory
+      ? Promise.resolve({ data: cachedHistory })
+      : historyApi.getHistory().then((res) => {
+          if (res.data?.length) clientCache.set("history", res.data, TTL.MEDIUM);
+          return res;
+        });
+    historyPromise
+      .then(({ data }) => {
+        // Recently played (unique songs, newest first)
+        const seenIds = new Set<string>();
+        const unique: Song[] = [];
+        for (const entry of data) {
+          if (!seenIds.has(entry.song.youtube_id)) {
+            seenIds.add(entry.song.youtube_id);
+            unique.push(entry.song);
+          }
+        }
+        setRecentlyPlayed(unique.slice(0, 12));
+
+        // Artist mixes: artists with 3+ plays — capture one thumbnail per artist
+        const artistCount: Record<string, number> = {};
+        const artistThumb: Record<string, string> = {};
+        for (const entry of data) {
+          const a = entry.song.artist;
+          artistCount[a] = (artistCount[a] ?? 0) + 1;
+          // Keep the first thumbnail we encounter for each artist
+          if (!artistThumb[a] && entry.song.thumbnail_url) {
+            artistThumb[a] = entry.song.thumbnail_url;
+          }
+        }
+        const mixes: ArtistMix[] = Object.entries(artistCount)
+          .filter(([, count]) => count >= 3)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([artist, playCount]) => ({
+            artist,
+            playCount,
+            thumbnail: artistThumb[artist],
+          }));
+        setArtistMixes(mixes);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingHistory(false));
+  }, []);
+
+  // ── Fetch: New This Week ──────────────────────────────────────────────────
+  useEffect(() => {
+    const hit = cacheGet<Song[]>("new_this_week", TTL_LONG);
+    if (hit) { setNewThisWeek(hit); setLoadingNew(false); return; }
+    recommendationsApi
+      .get("new")
+      .then(({ data }) => {
+        const songs: Song[] = data.recommendations || [];
+        setNewThisWeek(songs); setErrorNew(false);
+        if (songs.length) cacheSet("new_this_week", songs, TTL_LONG);
+      })
+      .catch(() => { setNewThisWeek([]); setErrorNew(true); })
+      .finally(() => setLoadingNew(false));
+  }, []);
+
+  // ── Fetch: Trending in Naija ──────────────────────────────────────────────
+  useEffect(() => {
+    const hit = cacheGet<Song[]>("trending", TTL_LONG);
+    if (hit) { setTrending(hit); setLoadingTrending(false); return; }
+    musicApi
+      .trending()
+      .then(({ data }) => {
+        const songs: Song[] = data.results || [];
+        setTrending(songs); setErrorTrending(false);
+        if (songs.length) cacheSet("trending", songs, TTL_LONG);
+      })
+      .catch(() => { setTrending([]); setErrorTrending(true); })
+      .finally(() => setLoadingTrending(false));
+  }, []);
+
+  // ── Fetch: Top Albums ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const hit = cacheGet<Song[]>("albums", TTL_LONG);
+    if (hit) { setAlbums(hit); setLoadingAlbums(false); return; }
+    musicApi
+      .albums()
+      .then(({ data }) => {
+        const songs: Song[] = data.results || [];
+        setAlbums(songs); setErrorAlbums(false);
+        if (songs.length) cacheSet("albums", songs, TTL_LONG);
+      })
+      .catch(() => { setAlbums([]); setErrorAlbums(true); })
+      .finally(() => setLoadingAlbums(false));
+  }, []);
+
+  // ── Fetch: Made for You / mood ────────────────────────────────────────────
+  useEffect(() => {
+    const cacheKey = `recs_${activeMood || "default"}`;
+    const hit = cacheGet<Song[]>(cacheKey, TTL_SHORT);
+    if (hit && !moodClickedRef.current) {
+      setRecommendations(hit);
+      setLoadingRec(false);
+      return;
+    }
+    setLoadingRec(true);
+    recommendationsApi
+      .get(activeMood || undefined)
+      .then(({ data }) => {
+        const songs: Song[] = data.recommendations || [];
+        setRecommendations(songs);
+        if (songs.length) cacheSet(cacheKey, songs, TTL_SHORT);
+        // Auto-play when user tapped a specific mood pill
+        if (moodClickedRef.current && songs.length > 0) {
+          playSong(songs[0], songs);
+          moodClickedRef.current = false;
+        }
+      })
+      .catch(() => setRecommendations([]))
+      .finally(() => setLoadingRec(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMood]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  const handleMoodClick = (value: string) => {
+    if (value !== "") moodClickedRef.current = true;
+    setActiveMood(value);
+  };
+
+  const handleSave = async (song: Song) => {
+    try {
+      await libraryApi.saveSong({
+        youtube_id:    song.youtube_id,
+        title:         song.title,
+        artist:        song.artist,
+        thumbnail_url: song.thumbnail_url,
+      });
+    } catch {}
+  };
+
+  const handleArtistMixPlay = async (artist: string) => {
+    try {
+      const { data } = await musicApi.search(artist, 15);
+      const results: Song[] = data.results || [];
+      if (results.length > 0) playSong(results[0], results);
+    } catch {}
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const greeting = () => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    return "Good evening";
+  };
+
+  const activeMoodLabel =
+    MOODS.find((m) => m.value === activeMood)?.label ?? "Picks";
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="px-4 md:px-8 py-6 md:py-8 max-w-4xl">
+
+      {/* Greeting */}
+      <div className="mb-8 md:mb-10">
+        <h1
+          className="text-2xl md:text-3xl font-bold leading-tight"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          <span className="text-[#f5f0e8]">{greeting()}</span>
+          {user?.display_name && (
+            <span className="text-[#e8c97a]">, {user.display_name}</span>
+          )}
+        </h1>
+        <p className="text-[#605850] text-sm mt-1">What are we feeling today?</p>
+      </div>
+
+      {/* ── Recently Played ──────────────────────────────────────────────── */}
+      {(loadingHistory || recentlyPlayed.length > 0) && (
+        <Section title="Recently Played">
+          {loadingHistory ? (
+            <CardScrollSkeleton />
+          ) : (
+            <HorizontalScroll>
+              {recentlyPlayed.map((song) => (
+                <SongCard
+                  key={song.youtube_id}
+                  song={song}
+                  queue={recentlyPlayed}
+                  onPlay={playSong}
+                />
+              ))}
+            </HorizontalScroll>
+          )}
+        </Section>
+      )}
+
+      {/* ── New This Week ────────────────────────────────────────────────── */}
+      <Section title="New This Week" subtitle="Fresh from your favourite artists">
+        {loadingNew ? (
+          <CardScrollSkeleton />
+        ) : errorNew ? (
+          <SectionError />
+        ) : newThisWeek.length === 0 ? (
+          <SectionEmpty message="Nothing new right now — check back soon." />
+        ) : (
+          <HorizontalScroll>
+            {newThisWeek.map((song) => (
+              <SongCard
+                key={song.youtube_id}
+                song={song}
+                queue={newThisWeek}
+                onPlay={playSong}
+              />
+            ))}
+          </HorizontalScroll>
+        )}
+      </Section>
+
+      {/* ── Your Artist Mixes ────────────────────────────────────────────── */}
+      {!loadingHistory && artistMixes.length > 0 && (
+        <Section title="Your Artist Mixes" subtitle="Based on what you play most">
+          <HorizontalScroll>
+            {artistMixes.map((mix) => (
+              <ArtistMixCard
+                key={mix.artist}
+                artist={mix.artist}
+                thumbnail={mix.thumbnail}
+                onPlay={() => handleArtistMixPlay(mix.artist)}
+              />
+            ))}
+          </HorizontalScroll>
+        </Section>
+      )}
+
+      {/* ── Mood selector ────────────────────────────────────────────────── */}
+      <div className="mb-5 flex gap-2 overflow-x-auto no-scrollbar -mx-4 md:mx-0 px-4 md:px-0 pb-1">
+        {MOODS.map((mood) => (
+          <button
+            key={mood.value}
+            onClick={() => handleMoodClick(mood.value)}
+            className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all border ${
+              activeMood === mood.value
+                ? "bg-[#c9a84c15] border-[#c9a84c55] text-[#e8c97a]"
+                : "border-[#2a2a2a] text-[#605850] hover:text-[#b8b0a0] hover:border-[#3a3a3a]"
+            }`}
+          >
+            {mood.icon}
+            {mood.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Made for You / Mood station ──────────────────────────────────── */}
+      <Section
+        title={activeMood ? `${activeMoodLabel} for You` : "Made for You"}
+        subtitle={activeMood ? "Playing now — tap any track to jump in" : "Based on your listening history"}
+      >
+        {loadingRec ? (
+          <div className="flex flex-col gap-1">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                <div className="w-7 h-4 rounded bg-[#1a1a1a] animate-pulse flex-shrink-0" />
+                <div className="w-11 h-11 rounded-lg bg-[#1a1a1a] animate-pulse flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="h-3.5 w-2/3 bg-[#1a1a1a] rounded animate-pulse mb-1.5" />
+                  <div className="h-3 w-1/3 bg-[#1a1a1a] rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : recommendations.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {recommendations.map((song, i) => (
+              <SongRow
+                key={song.youtube_id}
+                song={song}
+                index={i}
+                queue={recommendations}
+                onPlay={playSong}
+                onAction={handleSave}
+                actionIcon={<HeartIcon />}
+                onSecondAction={setPlaylistSong}
+                secondActionIcon={<PlaylistAddIcon />}
+                onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="py-10 text-center">
+            <p className="text-[#3a3a3a] text-sm">
+              {activeMood
+                ? "No recommendations for this mood yet."
+                : "Search and listen to some songs — your picks will appear here."}
+            </p>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Trending in Naija ────────────────────────────────────────────── */}
+      <Section title="Trending in Naija" subtitle="Hot right now">
+        {loadingTrending ? (
+          <CardScrollSkeleton />
+        ) : errorTrending ? (
+          <SectionError />
+        ) : trending.length === 0 ? (
+          <SectionEmpty message="Nothing trending right now — check back soon." />
+        ) : (
+          <HorizontalScroll>
+            {trending.map((song) => (
+              <SongCard
+                key={song.youtube_id}
+                song={song}
+                queue={trending}
+                onPlay={playSong}
+              />
+            ))}
+          </HorizontalScroll>
+        )}
+      </Section>
+
+      {/* ── Top Albums ───────────────────────────────────────────────────── */}
+      <Section title="Top Albums" subtitle="Latest projects from your favourites">
+        {loadingAlbums ? (
+          <CardScrollSkeleton />
+        ) : errorAlbums ? (
+          <SectionError />
+        ) : albums.length === 0 ? (
+          <SectionEmpty message="Albums loading — check back in a moment." />
+        ) : (
+          <HorizontalScroll>
+            {albums.map((song) => (
+              <SongCard
+                key={song.youtube_id}
+                song={song}
+                queue={albums}
+                onPlay={playSong}
+              />
+            ))}
+          </HorizontalScroll>
+        )}
+      </Section>
+
+      {playlistSong && (
+        <AddToPlaylistModal
+          song={playlistSong}
+          onClose={() => setPlaylistSong(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mb-8 md:mb-10">
+      <div className="mb-4">
+        <h2
+          className="text-base md:text-lg font-semibold text-[#f5f0e8]"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          {title}
+        </h2>
+        {subtitle && (
+          <p className="text-xs text-[#605850] mt-0.5">{subtitle}</p>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Full-bleed horizontal scroll that bleeds to screen edge on mobile */
+function HorizontalScroll({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar -mx-4 md:mx-0 px-4 md:px-0">
+      {children}
+    </div>
+  );
+}
+
+/** Artist Mix card — shows the artist's thumbnail with a dark gradient overlay */
+function ArtistMixCard({
+  artist,
+  thumbnail,
+  onPlay,
+}: {
+  artist: string;
+  thumbnail?: string;
+  onPlay: () => void;
+}) {
+  const [from, to] = artistGradient(artist);
+
+  return (
+    <button
+      onClick={onPlay}
+      className="flex-shrink-0 w-36 h-36 rounded-xl overflow-hidden relative group select-none cursor-pointer focus:outline-none"
+      title={`Play ${artist} Mix`}
+    >
+      {/* Background: real thumbnail if available, otherwise gradient */}
+      {thumbnail ? (
+        <img
+          src={thumbnail}
+          alt={artist}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div
+          className="absolute inset-0"
+          style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
+        />
+      )}
+
+      {/* Large initials watermark (visible on gradient bg, hidden under photo) */}
+      {!thumbnail && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+          <span
+            className="font-extrabold leading-none"
+            style={{
+              fontFamily: "Syne, sans-serif",
+              fontSize: 110,
+              color: "rgba(255,255,255,0.12)",
+              letterSpacing: "-0.05em",
+              marginTop: 16,
+            }}
+          >
+            {artist.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+          </span>
+        </div>
+      )}
+
+      {/* Dark gradient from bottom so text is always readable */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
+
+      {/* Text pinned to bottom */}
+      <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 pt-8">
+        <p
+          className="text-white font-bold text-sm truncate leading-tight"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          {artist}
+        </p>
+        <p className="text-white/55 text-[11px] tracking-widest uppercase mt-0.5">Mix</p>
+      </div>
+
+      {/* Hover / play overlay */}
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-sm">
+          <Play size={16} fill="white" className="text-white ml-0.5" />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/** Loading skeleton for horizontal card rows */
+function CardScrollSkeleton() {
+  return (
+    <div className="flex gap-4 -mx-4 md:mx-0 px-4 md:px-0">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="flex-shrink-0 w-32 md:w-40">
+          <div className="w-32 h-32 md:w-40 md:h-40 rounded-xl bg-[#1a1a1a] animate-pulse mb-2.5" />
+          <div className="h-3 w-3/4 bg-[#1a1a1a] rounded animate-pulse mb-1.5" />
+          <div className="h-2.5 w-1/2 bg-[#1a1a1a] rounded animate-pulse" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Shown when a section fetch failed */
+function SectionError() {
+  return (
+    <p className="text-xs text-[#3a3a3a] py-4 px-1">
+      Couldn't load right now — make sure the server is running and refresh.
+    </p>
+  );
+}
+
+/** Shown when a section loaded successfully but returned no items */
+function SectionEmpty({ message }: { message: string }) {
+  return <p className="text-xs text-[#3a3a3a] py-4 px-1">{message}</p>;
+}
+
+// ── Tiny inline SVG icons ─────────────────────────────────────────────────────
+
+function HeartIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
+function PlaylistAddIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6" x2="15" y2="6" />
+      <line x1="3" y1="12" x2="15" y2="12" />
+      <line x1="3" y1="18" x2="9" y2="18" />
+      <line x1="19" y1="15" x2="19" y2="21" />
+      <line x1="16" y1="18" x2="22" y2="18" />
+    </svg>
+  );
+}

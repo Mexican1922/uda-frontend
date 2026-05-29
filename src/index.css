@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Ụda Color System ── */
+  --color-uda-black: #080808;
+  --color-uda-surface: #111111;
+  --color-uda-card: #1a1a1a;
+  --color-uda-border: #2a2a2a;
+  --color-uda-muted: #3a3a3a;
+
+  /* Gold — primary accent */
+  --color-uda-gold: #c9a84c;
+  --color-uda-gold-light: #e8c97a;
+  --color-uda-gold-dim: #c9a84c33;
+
+  /* Emerald — secondary accent */
+  --color-uda-emerald: #2dbe8a;
+  --color-uda-emerald-dim: #2dbe8a22;
+
+  /* Text */
+  --color-uda-white: #f5f0e8;
+  --color-uda-text: #b8b0a0;
+  --color-uda-subtle: #605850;
+
+  /* ── Typography ── */
+  --font-display: "Syne", sans-serif;
+  --font-body: "DM Sans", sans-serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body, #root {
+    height: 100%;
+    background-color: #080808;
+    color: #f5f0e8;
+    font-family: "DM Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #111111; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #c9a84c; }
+
+  /* Selection */
+  ::selection { background: #c9a84c33; color: #e8c97a; }
+}
+
+/* Equaliser bar animation (playing indicator) */
+@keyframes uda-eq {
+  0%, 100% { transform: scaleY(0.4); }
+  50%       { transform: scaleY(1); }
+}
+
+/* Bottom sheet slide-up animation */
+@keyframes uda-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@layer utilities {
+  .uda-eq-bar {
+    transform-origin: bottom;
+    animation: uda-eq 0.75s ease-in-out infinite;
+  }
+
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  .animate-slide-up {
+    animation: uda-slide-up 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+}

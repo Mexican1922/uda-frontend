@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local env — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# .env.production is safe to commit (no secrets, just public API URL)
+
+# Vite cache
+.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

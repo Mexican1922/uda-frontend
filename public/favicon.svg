@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Dark rounded background -->
+  <rect width="64" height="64" rx="14" fill="#111111"/>
+
+  <!-- Gold gradient definition -->
+  <defs>
+    <linearGradient id="gold" x1="32" y1="8" x2="32" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#e8c97a"/>
+      <stop offset="100%" stop-color="#9a6e28"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Center dot -->
+  <circle cx="32" cy="32" r="4" fill="url(#gold)"/>
+
+  <!-- Inner wave pair -->
+  <path d="M 22 22 Q 18 32 22 42" fill="none" stroke="url(#gold)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M 42 22 Q 46 32 42 42" fill="none" stroke="url(#gold)" stroke-width="3.2" stroke-linecap="round"/>
+
+  <!-- Outer wave pair -->
+  <path d="M 14 14 Q 7 32 14 50" fill="none" stroke="url(#gold)" stroke-width="3.2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 50 14 Q 57 32 50 50" fill="none" stroke="url(#gold)" stroke-width="3.2" stroke-linecap="round" opacity="0.7"/>
+</svg>
