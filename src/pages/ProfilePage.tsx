@@ -6,6 +6,7 @@ import { usePlayerStore } from "../store/playerStore";
 import type { Song } from "../types";
 import SongRow from "../components/ui/SongRow";
 import { clientCache, TTL } from "../services/cache";
+import { usePWAInstall } from "../hooks/usePWAInstall";
 
 export default function ProfilePage() {
   const { user, logout } = useAuthStore();
@@ -50,6 +51,8 @@ export default function ProfilePage() {
     };
     load();
   }, []);
+
+  const { canInstall, install, isInstalled } = usePWAInstall();
 
   const handleLogout = async () => {
     const refresh = localStorage.getItem("uda_refresh") || "";
@@ -193,6 +196,42 @@ export default function ProfilePage() {
             ))}
           </div>
         </ProfileSection>
+      )}
+
+      {/* ── Install app banner ────────────────────────────────────────────── */}
+      {canInstall && (
+        <div className="px-4 md:px-8 mt-6">
+          <button
+            onClick={install}
+            className="w-full rounded-xl flex items-center gap-4 px-4 py-3.5 transition-all hover:opacity-90"
+            style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05))", border: "1px solid rgba(201,168,76,0.3)" }}
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <img src="/icons/icon-192.png" alt="Ụda" className="w-full h-full object-cover" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold text-[#e8c97a]" style={{ fontFamily: "Syne, sans-serif" }}>
+                Install Ụda App
+              </p>
+              <p className="text-xs text-[#605850] mt-0.5">Add to home screen for the best experience</p>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c9a84c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
+        </div>
+      )}
+      {isInstalled && (
+        <div className="px-4 md:px-8 mt-6">
+          <div className="rounded-xl flex items-center gap-3 px-4 py-3 bg-[#111111] border border-[#2a2a2a]">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2dbe8a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6 9 17l-5-5"/>
+            </svg>
+            <p className="text-sm text-[#b8b0a0]">Ụda is installed on this device</p>
+          </div>
+        </div>
       )}
 
       {/* ── Logout button ─────────────────────────────────────────────────── */}
