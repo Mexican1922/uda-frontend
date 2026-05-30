@@ -1,4 +1,5 @@
-import { Play } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Play, MoreVertical, ListEnd, ListStart } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
 import type { Song } from "../../types";
 
@@ -56,8 +57,25 @@ export default function SongRow({
   onShare,
   onArtistClick,
 }: Props) {
-  const { currentSong, isPlaying, togglePlay } = usePlayerStore();
+  const { currentSong, isPlaying, togglePlay, playNext, addToQueue } = usePlayerStore();
   const isActive = currentSong?.youtube_id === song.youtube_id;
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close the kebab menu on any outside click / scroll.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: Event) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("scroll", close, true);
+    };
+  }, [menuOpen]);
 
   const handleAction = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -186,6 +204,41 @@ export default function SongRow({
             {actionIcon}
           </button>
         )}
+
+        {/* Queue kebab — Play next / Add to queue */}
+        <div ref={menuRef} className="relative">
+          <button
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+            title="More"
+            className={`transition-opacity text-[#605850] hover:text-[#e8c97a] active:scale-90 p-1 leading-none ${
+              menuOpen ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
+            }`}
+          >
+            <MoreVertical size={15} />
+          </button>
+          {menuOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-full mt-1 z-50 w-44 rounded-xl bg-[#161616] border border-[#2a2a2a] shadow-2xl shadow-black/60 overflow-hidden py-1"
+            >
+              <button
+                onClick={() => { playNext(song); setMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs text-[#b8b0a0] hover:bg-white/[0.05] hover:text-[#f5f0e8] transition-colors"
+              >
+                <ListStart size={14} className="text-[#605850]" />
+                Play next
+              </button>
+              <button
+                onClick={() => { addToQueue(song); setMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs text-[#b8b0a0] hover:bg-white/[0.05] hover:text-[#f5f0e8] transition-colors"
+              >
+                <ListEnd size={14} className="text-[#605850]" />
+                Add to queue
+              </button>
+            </div>
+          )}
+        </div>
+
         <span className="text-xs text-[#3a3a3a] tabular-nums ml-1">{song.duration}</span>
       </div>
     </div>

@@ -109,11 +109,11 @@ export default function YouTubePlayer() {
             // 150 — embedding disabled (same as 101)
             const { showToast: toast, nextSong: skip } = usePlayerStore.getState();
             if (e.data === 101 || e.data === 150) {
-              toast("This video can't be embedded — skipping ⏭");
+              toast("This video can't be embedded — skipping");
             } else if (e.data === 100) {
-              toast("Video unavailable — skipping ⏭");
+              toast("Video unavailable — skipping");
             } else {
-              toast("Playback error — skipping ⏭");
+              toast("Playback error — skipping");
             }
             skip();
           },

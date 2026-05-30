@@ -5,6 +5,7 @@ import Sidebar from "./Sidebar";
 import PlayerBar from "../player/PlayerBar";
 import { usePlayerStore } from "../../store/playerStore";
 import { useDeviceSync } from "../../hooks/useDeviceSync";
+import { useVoiceControl } from "../../hooks/useVoiceControl";
 
 export default function AppLayout() {
   const currentSong = usePlayerStore((s) => s.currentSong);
@@ -12,6 +13,8 @@ export default function AppLayout() {
 
   // Cross-device playback sync (no-op until Supabase Realtime is configured).
   useDeviceSync();
+  // Voice wake-word control ("Uda, next") — only active while user enables it.
+  useVoiceControl();
 
   return (
     <div className="flex h-screen bg-[#080808] overflow-hidden">

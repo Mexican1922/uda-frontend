@@ -95,6 +95,13 @@ export const libraryApi = {
   unsaveSong: (youtube_id: string) =>
     api.delete(`/library/saved/${youtube_id}/`),
 
+  // Favourite (followed) artists
+  getFavouriteArtists: () => api.get("/library/favourite-artists/"),
+  followArtist: (data: { name: string; thumbnail_url?: string }) =>
+    api.post("/library/favourite-artists/", data),
+  unfollowArtist: (name: string) =>
+    api.delete(`/library/favourite-artists/${encodeURIComponent(name)}/`),
+
   getPlaylists: () => api.get("/library/playlists/"),
   createPlaylist: (data: { name: string; description?: string }) =>
     api.post("/library/playlists/", data),

@@ -40,6 +40,16 @@ interface PlayerState {
   showToast: (msg: string) => void;
   clearToast: () => void;
 
+  // ── Voice control ("Uda, next") ──
+  voiceEnabled: boolean;       // user has switched it on
+  voiceSupported: boolean;     // browser exposes SpeechRecognition
+  voiceListening: boolean;     // mic is actively listening right now
+  lastVoiceHeard: string | null;
+  toggleVoice: () => void;
+  setVoiceSupported: (v: boolean) => void;
+  setVoiceListening: (v: boolean) => void;
+  setLastVoiceHeard: (v: string | null) => void;
+
   // ── Cross-device sync ──
   syncDevices: SyncDevice[];        // all online devices for this user (incl. self)
   activeDeviceId: string | null;    // device currently playing audio (null = none claimed)
@@ -77,6 +87,9 @@ interface PlayerState {
   toggleRepeat: () => void;
   toggleShuffle: () => void;
   addToQueue: (song: Song) => void;
+  playNext: (song: Song) => void;
+  removeFromQueue: (index: number) => void;
+  jumpTo: (index: number) => void;
   clearQueue: () => void;
   setNowPlayingOpen: (open: boolean) => void;
   setAlbumArtBounds: (bounds: AlbumArtBounds | null) => void;
@@ -105,6 +118,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     setTimeout(() => set({ toast: null }), 3000);
   },
   clearToast: () => set({ toast: null }),
+
+  // ── Voice control ──
+  voiceEnabled: (() => {
+    try { return localStorage.getItem("uda_voice") === "1"; } catch { return false; }
+  })(),
+  voiceSupported: false,
+  voiceListening: false,
+  lastVoiceHeard: null,
+  toggleVoice: () =>
+    set((s) => {
+      const next = !s.voiceEnabled;
+      try { localStorage.setItem("uda_voice", next ? "1" : "0"); } catch {}
+      return { voiceEnabled: next };
+    }),
+  setVoiceSupported: (voiceSupported) => set({ voiceSupported }),
+  setVoiceListening: (voiceListening) => set({ voiceListening }),
+  setLastVoiceHeard: (lastVoiceHeard) => set({ lastVoiceHeard }),
 
   // ── Cross-device sync ──
   syncDevices: [],
@@ -275,7 +305,57 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         s.repeatMode === "off" ? "all" : s.repeatMode === "all" ? "one" : "off",
     })),
   toggleShuffle: () => set((s) => ({ isShuffled: !s.isShuffled })),
-  addToQueue: (song) => set((s) => ({ queue: [...s.queue, song] })),
+  addToQueue: (song) => {
+    const { queue, showToast } = get();
+    if (queue.some((s) => s.youtube_id === song.youtube_id)) {
+      showToast("Already in queue");
+      return;
+    }
+    set({ queue: [...queue, song] });
+    showToast("Added to queue");
+  },
+
+  // Insert a song to play right after the current track.
+  playNext: (song) => {
+    const { queue, currentIndex, currentSong, showToast } = get();
+    // Nothing playing yet — just start it.
+    if (!currentSong) {
+      set({ queue: [song], currentIndex: 0, currentSong: song, isPlaying: true, progress: 0, currentTime: 0, pendingSeek: null });
+      return;
+    }
+    // Drop any existing copy so we don't duplicate, then splice in after current.
+    const without = queue.filter((s) => s.youtube_id !== song.youtube_id);
+    // currentIndex may shift if the removed copy was before it.
+    let insertAt = without.findIndex((s) => s.youtube_id === currentSong.youtube_id);
+    insertAt = insertAt >= 0 ? insertAt + 1 : currentIndex + 1;
+    const next = [...without.slice(0, insertAt), song, ...without.slice(insertAt)];
+    const newCurrentIndex = next.findIndex((s) => s.youtube_id === currentSong.youtube_id);
+    set({ queue: next, currentIndex: newCurrentIndex >= 0 ? newCurrentIndex : currentIndex });
+    showToast("Playing next");
+  },
+
+  // Remove a song from the queue by index (can't remove the current track).
+  removeFromQueue: (index) => {
+    const { queue, currentIndex } = get();
+    if (index < 0 || index >= queue.length || index === currentIndex) return;
+    const next = queue.filter((_, i) => i !== index);
+    // Keep currentIndex pointing at the same song.
+    const newIndex = index < currentIndex ? currentIndex - 1 : currentIndex;
+    set({ queue: next, currentIndex: newIndex });
+  },
+
+  // Jump straight to a queue position (tap an up-next item).
+  jumpTo: (index) => {
+    const { queue, isRemote, _commandSink } = get();
+    if (index < 0 || index >= queue.length) return;
+    const song = queue[index];
+    if (isRemote && _commandSink) {
+      _commandSink({ action: "playSong", song, queue });
+      return;
+    }
+    set({ currentIndex: index, currentSong: song, isPlaying: true, progress: 0, currentTime: 0, pendingSeek: null });
+  },
+
   clearQueue: () =>
     set({ queue: [], currentSong: null, isPlaying: false, currentIndex: 0 }),
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Plus } from "lucide-react";
+import { ChevronLeft, Check, Plus, Sparkles, Drama, Star, Music2 } from "lucide-react";
 
 // ── Genre options with gradient backgrounds ───────────────────────────────────
 const GENRES = [
@@ -236,7 +236,7 @@ export default function OnboardingPage() {
                 boxShadow: "0 0 0 18px rgba(201,168,76,0.08), 0 0 0 36px rgba(201,168,76,0.04)",
               }}
             >
-              <span style={{ fontSize: 52 }}>✨</span>
+              <Sparkles size={46} className="text-[#080808]" strokeWidth={1.75} />
             </div>
           </div>
 
@@ -256,12 +256,12 @@ export default function OnboardingPage() {
             style={{ background: "#111111", border: "1px solid #2a2a2a" }}
           >
             {[
-              { icon: "🎭", label: `${selectedGenres.length} genres selected` },
-              { icon: "⭐", label: `${followedArtists.length} artists followed` },
-              { icon: "🎵", label: "Personalised feed ready" },
+              { icon: <Drama size={18} className="text-[#e8c97a]" />,  label: `${selectedGenres.length} genres selected` },
+              { icon: <Star size={18} className="text-[#e8c97a]" />,   label: `${followedArtists.length} artists followed` },
+              { icon: <Music2 size={18} className="text-[#e8c97a]" />, label: "Personalised feed ready" },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-3 text-sm">
-                <span className="text-lg">{item.icon}</span>
+                <span className="w-5 flex-shrink-0 flex items-center justify-center">{item.icon}</span>
                 <span className="text-[#b8b0a0] flex-1">{item.label}</span>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2dbe8a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />

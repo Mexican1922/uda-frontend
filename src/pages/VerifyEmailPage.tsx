@@ -88,7 +88,10 @@ export default function VerifyEmailPage() {
           <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-4 mb-6 text-left">
             <p className="text-xs text-[#605850] mb-3 uppercase tracking-widest">Didn't get it?</p>
             {resendSent ? (
-              <p className="text-sm text-[#2dbe8a] font-semibold">✓ New link sent — check your inbox</p>
+              <p className="flex items-center gap-1.5 text-sm text-[#2dbe8a] font-semibold">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                New link sent — check your inbox
+              </p>
             ) : (
               <div className="flex gap-2">
                 <input
@@ -152,7 +155,7 @@ export default function VerifyEmailPage() {
           <p className="text-[#b8b0a0] text-sm">
             {state === "already_verified"
               ? "Redirecting to sign in…"
-              : "Welcome to Ụda 🎵 Setting up your experience…"}
+              : "Welcome to Ụda — setting up your experience…"}
           </p>
         </div>
       </div>
@@ -178,7 +181,10 @@ export default function VerifyEmailPage() {
         </p>
 
         {resendSent ? (
-          <p className="text-sm text-[#2dbe8a] font-semibold mb-6">✓ New link sent — check your inbox</p>
+          <p className="flex items-center justify-center gap-1.5 text-sm text-[#2dbe8a] font-semibold mb-6">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            New link sent — check your inbox
+          </p>
         ) : (
           <div className="flex flex-col gap-3 mb-6">
             <input

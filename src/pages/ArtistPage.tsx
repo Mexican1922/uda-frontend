@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Check, Plus, Play, Shuffle, Radio, Loader2 } from "lucide-react";
-import { musicApi } from "../services/api";
+import { musicApi, libraryApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import { useAuthStore } from "../store/authStore";
 import type { Song } from "../types";
@@ -78,6 +78,7 @@ export default function ArtistPage() {
   const [loading, setLoading] = useState(true);
   const [radioLoading, setRadioLoading] = useState(false);
   const [following, setFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
   const [shareSong, setShareSong] = useState<Song | null>(null);
 
@@ -100,6 +101,41 @@ export default function ArtistPage() {
       .catch(() => setRelated(relatedArtists(artistName)))
       .finally(() => setLoading(false));
   }, [artistName]);
+
+  // Load whether the logged-in user already follows this artist.
+  useEffect(() => {
+    setFollowing(false);
+    if (isGuest) return;
+    libraryApi
+      .getFavouriteArtists()
+      .then(({ data }) => {
+        const names: string[] = (data || []).map((f: { name: string }) => f.name.toLowerCase());
+        setFollowing(names.includes(artistName.toLowerCase()));
+      })
+      .catch(() => {});
+  }, [artistName, isGuest]);
+
+  const handleFollow = async () => {
+    if (isGuest) { showToast("Sign in to follow artists"); return; }
+    if (followBusy) return;
+    setFollowBusy(true);
+    const next = !following;
+    setFollowing(next); // optimistic
+    try {
+      if (next) {
+        await libraryApi.followArtist({ name: artistName, thumbnail_url: songs[0]?.thumbnail_url || "" });
+        showToast(`Following ${artistName}`);
+      } else {
+        await libraryApi.unfollowArtist(artistName);
+        showToast(`Unfollowed ${artistName}`);
+      }
+    } catch {
+      setFollowing(!next); // revert on failure
+      showToast("Couldn't update — try again");
+    } finally {
+      setFollowBusy(false);
+    }
+  };
 
   const handlePlay = () => {
     if (songs.length > 0) playSong(songs[0], songs);
@@ -224,8 +260,9 @@ export default function ArtistPage() {
 
         {/* Follow toggle */}
         <button
-          onClick={() => setFollowing((f) => !f)}
-          className="h-11 px-4 rounded-full flex items-center gap-2 font-bold text-sm transition-all"
+          onClick={handleFollow}
+          disabled={followBusy}
+          className="h-11 px-4 rounded-full flex items-center gap-2 font-bold text-sm transition-all disabled:opacity-60"
           style={{
             fontFamily: "Syne, sans-serif",
             letterSpacing: "0.04em",

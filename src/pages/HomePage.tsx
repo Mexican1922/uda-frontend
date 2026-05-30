@@ -42,6 +42,7 @@ interface ArtistMix {
   artist: string;
   playCount: number;
   thumbnail?: string;   // a song thumbnail from this artist's history
+  followed?: boolean;   // user explicitly follows this artist
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -132,8 +133,14 @@ export default function HomePage() {
           if (res.data?.length) clientCache.set("history", res.data, TTL.MEDIUM);
           return res;
         });
-    historyPromise
-      .then(({ data }) => {
+    // Followed artists also seed "Your Artist Mixes" — fetched in parallel.
+    const favPromise = libraryApi
+      .getFavouriteArtists()
+      .then((res) => res.data as { name: string; thumbnail_url?: string }[])
+      .catch(() => [] as { name: string; thumbnail_url?: string }[]);
+
+    Promise.all([historyPromise, favPromise])
+      .then(([{ data }, favourites]) => {
         // Recently played (unique songs, newest first)
         const seenIds = new Set<string>();
         const unique: Song[] = [];
@@ -145,26 +152,50 @@ export default function HomePage() {
         }
         setRecentlyPlayed(unique.slice(0, 12));
 
-        // Artist mixes: artists with 3+ plays — capture one thumbnail per artist
+        // Tally plays + a thumbnail per artist from history.
         const artistCount: Record<string, number> = {};
         const artistThumb: Record<string, string> = {};
         for (const entry of data) {
           const a = entry.song.artist;
           artistCount[a] = (artistCount[a] ?? 0) + 1;
-          // Keep the first thumbnail we encounter for each artist
           if (!artistThumb[a] && entry.song.thumbnail_url) {
             artistThumb[a] = entry.song.thumbnail_url;
           }
         }
-        const mixes: ArtistMix[] = Object.entries(artistCount)
-          .filter(([, count]) => count >= 3)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 8)
-          .map(([artist, playCount]) => ({
+
+        // Mixes = followed artists (always) + most-played artists (3+ plays).
+        const followedNames = new Set(favourites.map((f) => f.name.toLowerCase()));
+        const byName = new Map<string, ArtistMix>();
+
+        // Followed first — they should always appear.
+        for (const fav of favourites) {
+          byName.set(fav.name.toLowerCase(), {
+            artist: fav.name,
+            playCount: artistCount[fav.name] ?? 0,
+            thumbnail: artistThumb[fav.name] || fav.thumbnail_url || undefined,
+            followed: true,
+          });
+        }
+        // Then most-played artists not already followed.
+        for (const [artist, playCount] of Object.entries(artistCount)) {
+          if (playCount < 3) continue;
+          const key = artist.toLowerCase();
+          if (byName.has(key)) continue;
+          byName.set(key, {
             artist,
             playCount,
             thumbnail: artistThumb[artist],
-          }));
+            followed: followedNames.has(key),
+          });
+        }
+
+        const mixes: ArtistMix[] = Array.from(byName.values())
+          .sort((a, b) => {
+            // Followed artists float to the top, then by play count.
+            if (a.followed !== b.followed) return a.followed ? -1 : 1;
+            return b.playCount - a.playCount;
+          })
+          .slice(0, 10);
         setArtistMixes(mixes);
       })
       .catch(() => {})
@@ -393,6 +424,7 @@ export default function HomePage() {
                 key={mix.artist}
                 artist={mix.artist}
                 thumbnail={mix.thumbnail}
+                followed={mix.followed}
                 onPlay={() => handleArtistMixPlay(mix.artist)}
               />
             ))}
@@ -585,10 +617,12 @@ function HorizontalScroll({ children }: { children: React.ReactNode }) {
 function ArtistMixCard({
   artist,
   thumbnail,
+  followed,
   onPlay,
 }: {
   artist: string;
   thumbnail?: string;
+  followed?: boolean;
   onPlay: () => void;
 }) {
   const [from, to] = artistGradient(artist);
@@ -599,6 +633,18 @@ function ArtistMixCard({
       className="flex-shrink-0 w-36 h-36 rounded-xl overflow-hidden relative group select-none cursor-pointer focus:outline-none"
       title={`Play ${artist} Mix`}
     >
+      {/* Following badge — distinguishes favourited artists from most-played */}
+      {followed && (
+        <span
+          className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full flex items-center justify-center backdrop-blur-sm"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          title="You follow this artist"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="#e8c97a" stroke="none">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </span>
+      )}
       {/* Background: real thumbnail if available, otherwise gradient */}
       {thumbnail ? (
         <img

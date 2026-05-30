@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react
 import {
   ChevronDown, SkipBack, SkipForward, Play, Pause,
   Shuffle, Repeat, Repeat1, Heart, ListPlus,
-  Volume2, VolumeX, Music, Video, Loader2,
+  Volume2, VolumeX, Music, Video, Loader2, X, ListMusic, Mic,
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
 import { libraryApi } from "../../services/api";
@@ -60,12 +60,14 @@ export default function NowPlayingScreen({ onClose }: Props) {
   const {
     currentSong, isPlaying, progress, currentTime, duration,
     repeatMode, isShuffled, volume, isMuted, isVideoMode,
+    queue, currentIndex,
+    voiceEnabled, voiceSupported, voiceListening, toggleVoice,
     togglePlay, nextSong, prevSong, toggleRepeat, toggleShuffle,
-    seekTo, setVolume, toggleMute, toggleVideoMode,
+    seekTo, setVolume, toggleMute, toggleVideoMode, jumpTo, removeFromQueue,
     setNowPlayingOpen, setAlbumArtBounds,
   } = usePlayerStore();
 
-  const [tab, setTab]               = useState<"playing" | "lyrics">("playing");
+  const [tab, setTab]               = useState<"playing" | "lyrics" | "queue">("playing");
   const [saved, setSaved]           = useState(false);
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
 
@@ -79,6 +81,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLineRef      = useRef<HTMLDivElement>(null);
   const albumArtRef        = useRef<HTMLDivElement>(null);
+  const lyricsVideoRef     = useRef<HTMLDivElement>(null);
 
   // ── Register open/closed with the store ──────────────────────────────────
   useEffect(() => {
@@ -89,16 +92,20 @@ export default function NowPlayingScreen({ onClose }: Props) {
     };
   }, []);
 
-  // ── Measure album art slot and tell YouTubePlayer where to render ─────────
-  const measureAlbumArt = useCallback(() => {
-    if (!albumArtRef.current) return;
-    const r = albumArtRef.current.getBoundingClientRect();
+  // ── Measure the active video slot and tell YouTubePlayer where to render ──
+  // Video shows in the album-art square on the "playing" tab, and in a 16:9
+  // slot at the top of the "lyrics" tab. On the "queue" tab it falls back to
+  // the floating PiP (bounds = null).
+  const measureVideoSlot = useCallback(() => {
+    const el = tab === "lyrics" ? lyricsVideoRef.current : albumArtRef.current;
+    if (!el) { setAlbumArtBounds(null); return; }
+    const r = el.getBoundingClientRect();
     setAlbumArtBounds({ top: r.top, left: r.left, width: r.width, height: r.height });
-  }, [setAlbumArtBounds]);
+  }, [tab, setAlbumArtBounds]);
 
   useLayoutEffect(() => {
-    if (isVideoMode) {
-      measureAlbumArt();
+    if (isVideoMode && (tab === "playing" || tab === "lyrics")) {
+      measureVideoSlot();
     } else {
       setAlbumArtBounds(null);
     }
@@ -107,9 +114,9 @@ export default function NowPlayingScreen({ onClose }: Props) {
   // Re-measure on resize (orientation change on mobile)
   useEffect(() => {
     if (!isVideoMode) return;
-    window.addEventListener("resize", measureAlbumArt);
-    return () => window.removeEventListener("resize", measureAlbumArt);
-  }, [isVideoMode, measureAlbumArt]);
+    window.addEventListener("resize", measureVideoSlot);
+    return () => window.removeEventListener("resize", measureVideoSlot);
+  }, [isVideoMode, measureVideoSlot]);
 
   if (!currentSong) return null;
 
@@ -194,12 +201,30 @@ export default function NowPlayingScreen({ onClose }: Props) {
 
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
-          <button
-            onClick={onClose}
-            className="p-2 text-[#605850] hover:text-[#f5f0e8] transition-colors"
-          >
-            <ChevronDown size={24} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onClose}
+              className="p-2 text-[#605850] hover:text-[#f5f0e8] transition-colors"
+            >
+              <ChevronDown size={24} />
+            </button>
+
+            {/* Voice control toggle — only when the browser supports it */}
+            {voiceSupported && (
+              <button
+                onClick={toggleVoice}
+                title={voiceEnabled ? "Voice control on — say “Uda, next”" : "Enable voice control"}
+                className={`relative p-2 rounded-full transition-colors ${
+                  voiceEnabled ? "text-[#e8c97a]" : "text-[#3a3a3a] hover:text-[#605850]"
+                }`}
+              >
+                <Mic size={18} />
+                {voiceListening && (
+                  <span className="absolute inset-0 rounded-full border border-[#e8c97a]/40 animate-ping pointer-events-none" />
+                )}
+              </button>
+            )}
+          </div>
 
           <p className="text-xs text-[#605850] uppercase tracking-widest">Now Playing</p>
 
@@ -219,7 +244,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
 
         {/* Tabs */}
         <div className="flex gap-1 self-center mb-4 bg-[#111111]/80 rounded-xl p-1 flex-shrink-0">
-          {(["playing", "lyrics"] as const).map((t) => (
+          {(["playing", "lyrics", "queue"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -361,9 +386,18 @@ export default function NowPlayingScreen({ onClose }: Props) {
             </div>
           </div>
 
-        ) : (
+        ) : tab === "lyrics" ? (
         /* ── Tab: lyrics ──────────────────────────────────────────────────── */
           <div className="flex-1 overflow-hidden flex flex-col px-2">
+            {/* Video slot — keeps the video visible above the lyrics in video mode */}
+            {isVideoMode && (
+              <div
+                ref={lyricsVideoRef}
+                className="mx-3 mb-3 rounded-xl overflow-hidden aspect-video bg-black flex-shrink-0 flex items-center justify-center border border-[#1a1a1a]"
+              >
+                <Video size={24} className="text-white/25" />
+              </div>
+            )}
             {lyricsLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -419,6 +453,74 @@ export default function NowPlayingScreen({ onClose }: Props) {
                 <pre className="text-[#605850] text-sm whitespace-pre-wrap leading-relaxed font-sans text-center">
                   {plainLyrics}
                 </pre>
+              </div>
+            )}
+          </div>
+
+        ) : (
+        /* ── Tab: queue ───────────────────────────────────────────────────── */
+          <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-8">
+            {/* Now playing */}
+            <p className="text-[11px] text-[#605850] uppercase tracking-widest mb-2 px-1">Now playing</p>
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[#c9a84c0d] border border-[#c9a84c22] mb-6">
+              <img src={currentSong.thumbnail_url} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-[#e8c97a] truncate" style={{ fontFamily: "Syne, sans-serif" }}>
+                  {currentSong.title}
+                </p>
+                <p className="text-xs text-[#605850] truncate mt-0.5">{currentSong.artist}</p>
+              </div>
+              {isPlaying ? <Pause size={16} className="text-[#e8c97a] flex-shrink-0" fill="currentColor" />
+                         : <Play size={16} className="text-[#e8c97a] flex-shrink-0" fill="currentColor" />}
+            </div>
+
+            {/* Up next */}
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[11px] text-[#605850] uppercase tracking-widest">Up next</p>
+              {queue.length - currentIndex - 1 > 0 && (
+                <span className="text-[11px] text-[#3a3a3a]">{queue.length - currentIndex - 1} in queue</span>
+              )}
+            </div>
+
+            {queue.length - currentIndex - 1 <= 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-[#111111] border border-[#2a2a2a] flex items-center justify-center mb-3">
+                  <ListMusic size={24} className="text-[#2a2a2a]" />
+                </div>
+                <p className="text-[#605850] text-sm font-medium">Nothing up next</p>
+                <p className="text-[#3a3a3a] text-xs mt-1 max-w-[15rem]">
+                  Tap the menu on any song to add it here or play it next.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                {queue.slice(currentIndex + 1).map((song, i) => {
+                  const realIndex = currentIndex + 1 + i;
+                  return (
+                    <div
+                      key={`${song.youtube_id}-${realIndex}`}
+                      onClick={() => jumpTo(realIndex)}
+                      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-white/[0.04] transition-colors select-none"
+                    >
+                      <span className="w-5 text-center text-xs text-[#3a3a3a] tabular-nums flex-shrink-0 group-hover:hidden">{i + 1}</span>
+                      <span className="w-5 hidden group-hover:flex items-center justify-center flex-shrink-0 text-[#e8c97a]">
+                        <Play size={11} fill="currentColor" />
+                      </span>
+                      <img src={song.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{song.title}</p>
+                        <p className="text-xs text-[#605850] truncate mt-0.5">{song.artist}</p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeFromQueue(realIndex); }}
+                        title="Remove from queue"
+                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-[#3a3a3a] hover:text-[#f87171] active:scale-90 p-1 flex-shrink-0"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

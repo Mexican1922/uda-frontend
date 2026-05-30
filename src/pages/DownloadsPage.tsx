@@ -117,7 +117,13 @@ export default function DownloadsPage() {
         </div>
       ) : offlineSongs.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center px-6">
-          <span className="text-5xl mb-4">📲</span>
+          <div className="w-16 h-16 rounded-2xl bg-[#111111] border border-[#2a2a2a] flex items-center justify-center mb-4">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2dbe8a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="M7 10l5 5 5-5" />
+              <path d="M12 15V3" />
+            </svg>
+          </div>
           <p className="text-[#605850] text-sm font-medium mb-1">Nothing downloaded yet</p>
           <p className="text-xs text-[#3a3a3a] leading-relaxed">
             Tap the download icon on any saved song to make it available offline.
