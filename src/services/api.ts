@@ -132,6 +132,8 @@ export const recommendationsApi = {
     api.get("/recommendations/", { params: mood ? { mood } : {} }),
   nlSearch: (query: string) =>
     api.post("/recommendations/nl-search/", { query }),
+  explainLyric: (data: { line: string; title?: string; artist?: string }) =>
+    api.post("/recommendations/lyrics-explain/", data),
 };
 
 export default api;

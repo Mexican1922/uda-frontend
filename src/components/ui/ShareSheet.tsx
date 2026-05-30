@@ -4,6 +4,149 @@ import type { Song } from "../../types";
 interface Props {
   song: Song;
   onClose: () => void;
+  /** Optional lyric line to feature on the shareable card */
+  lyricLine?: string;
+}
+
+// ── Shareable image card ──────────────────────────────────────────────────────
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines - 1) break;
+    } else {
+      line = test;
+    }
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  // Ellipsis if we ran out of room
+  if (lines.length === maxLines) {
+    let last = lines[maxLines - 1];
+    while (ctx.measureText(last + "…").width > maxWidth && last.length) last = last.slice(0, -1);
+    if (text.length > lines.join(" ").length) lines[maxLines - 1] = last + "…";
+  }
+  return lines;
+}
+
+/**
+ * Render a branded Ụda image card to a PNG Blob. Tries to include the artwork;
+ * if the cross-origin thumbnail taints the canvas (export throws), it rebuilds
+ * a gradient-only card so a share always succeeds.
+ */
+async function generateCardBlob(song: Song, gradient: [string, string], lyricLine?: string): Promise<Blob | null> {
+  const W = 1080, H = 1080;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  try { await (document as Document & { fonts?: FontFaceSet }).fonts?.ready; } catch { /* fonts optional */ }
+
+  let art: HTMLImageElement | null = null;
+  try { if (song.thumbnail_url) art = await loadImage(song.thumbnail_url); } catch { art = null; }
+
+  const draw = (withImage: boolean) => {
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, gradient[0]);
+    bg.addColorStop(1, gradient[1]);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    // Darken toward the bottom for text legibility
+    const fade = ctx.createLinearGradient(0, H * 0.4, 0, H);
+    fade.addColorStop(0, "rgba(8,8,8,0)");
+    fade.addColorStop(1, "rgba(8,8,8,0.92)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, W, H);
+
+    // Album art — centered rounded square
+    const size = 560, ax = (W - size) / 2, ay = 150;
+    ctx.save();
+    roundRect(ctx, ax, ay, size, size, 40);
+    ctx.clip();
+    if (withImage && art) {
+      // cover-fit
+      const ar = art.width / art.height;
+      let dw = size, dh = size, dx = ax, dy = ay;
+      if (ar > 1) { dw = size * ar; dx = ax - (dw - size) / 2; }
+      else { dh = size / ar; dy = ay - (dh - size) / 2; }
+      ctx.drawImage(art, dx, dy, dw, dh);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(ax, ay, size, size);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.font = "800 180px Syne, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(song.artist.slice(0, 2).toUpperCase(), W / 2, ay + size / 2);
+    }
+    ctx.restore();
+
+    // Text block
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    let y = ay + size + 110;
+
+    ctx.fillStyle = "#f5f0e8";
+    ctx.font = "800 60px Syne, sans-serif";
+    for (const line of wrapText(ctx, song.title, W - 160, 2)) {
+      ctx.fillText(line, W / 2, y);
+      y += 72;
+    }
+
+    ctx.fillStyle = "#e8c97a";
+    ctx.font = "600 40px Syne, sans-serif";
+    ctx.fillText(wrapText(ctx, song.artist, W - 200, 1)[0] || song.artist, W / 2, y + 6);
+    y += 70;
+
+    if (lyricLine) {
+      ctx.fillStyle = "rgba(245,240,232,0.7)";
+      ctx.font = "italic 34px Georgia, serif";
+      for (const line of wrapText(ctx, `"${lyricLine}"`, W - 220, 2)) {
+        ctx.fillText(line, W / 2, y);
+        y += 46;
+      }
+    }
+
+    // Ụda wordmark, bottom
+    ctx.fillStyle = "#e8c97a";
+    ctx.font = "800 38px Syne, sans-serif";
+    ctx.fillText("Ụda", W / 2, H - 56);
+  };
+
+  draw(true);
+  // Force a taint check; if the artwork tainted the canvas this throws.
+  try {
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), "image/png"));
+  } catch {
+    draw(false);
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), "image/png"));
+  }
 }
 
 const ACTIONS = [
@@ -63,8 +206,40 @@ function songGradient(seed: string): [string, string] {
   return pairs[h % pairs.length];
 }
 
-export default function ShareSheet({ song, onClose }: Props) {
+export default function ShareSheet({ song, onClose, lyricLine }: Props) {
   const [copied, setCopied] = useState(false);
+  const [cardBusy, setCardBusy] = useState(false);
+
+  const handleShareImage = async () => {
+    if (cardBusy) return;
+    setCardBusy(true);
+    try {
+      const blob = await generateCardBlob(song, songGradient(song.artist + song.title), lyricLine);
+      if (!blob) return;
+      const file = new File([blob], `uda-${song.youtube_id}.png`, { type: "image/png" });
+      const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+      // Mobile: native share sheet → WhatsApp/IG Story directly.
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        await nav.share({
+          files: [file],
+          title: `${song.title} — ${song.artist}`,
+          text: `${song.title} by ${song.artist} on Ụda 🎵`,
+        });
+      } else {
+        // Desktop fallback: save the PNG so it can be uploaded anywhere.
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `uda-${song.title}.png`.replace(/[^\w.-]+/g, "_");
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      /* user cancelled the share sheet, or generation failed — no-op */
+    } finally {
+      setCardBusy(false);
+    }
+  };
 
   const handleAction = async (id: string) => {
     if (id === "copy") {
@@ -150,6 +325,32 @@ export default function ShareSheet({ song, onClose }: Props) {
           >
             Ụda
           </div>
+        </div>
+
+        {/* Primary: share as a branded image card */}
+        <div className="px-3 mb-2.5">
+          <button
+            onClick={handleShareImage}
+            disabled={cardBusy}
+            className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 text-sm font-bold text-[#080808] transition-all active:scale-[0.99] disabled:opacity-70"
+            style={{
+              fontFamily: "Syne, sans-serif",
+              background: "linear-gradient(135deg, #e8c97a, #c9a84c)",
+            }}
+          >
+            {cardBusy ? (
+              <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="9" cy="9" r="2" />
+                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+              </svg>
+            )}
+            {cardBusy ? "Creating card…" : "Share as image"}
+          </button>
         </div>
 
         {/* Share action grid */}

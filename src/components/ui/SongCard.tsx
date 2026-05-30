@@ -1,4 +1,5 @@
 import { Play, Pause } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { usePlayerStore } from "../../store/playerStore";
 import type { Song } from "../../types";
 
@@ -11,6 +12,7 @@ interface Props {
 export default function SongCard({ song, queue, onPlay }: Props) {
   const { currentSong, isPlaying, togglePlay } = usePlayerStore();
   const isActive = currentSong?.youtube_id === song.youtube_id;
+  const navigate = useNavigate();
 
   const handleClick = () => {
     if (isActive) togglePlay();   // tap active card → pause / resume
@@ -52,7 +54,16 @@ export default function SongCard({ song, queue, onPlay }: Props) {
       >
         {song.title}
       </p>
-      <p className="text-[11px] md:text-xs text-[#605850] truncate mt-0.5">{song.artist}</p>
+      <span
+        role="link"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (song.artist) navigate(`/artist/${encodeURIComponent(song.artist)}`);
+        }}
+        className="text-[11px] md:text-xs text-[#605850] hover:text-[#e8c97a] truncate mt-0.5 block w-fit max-w-full transition-colors"
+      >
+        {song.artist}
+      </span>
     </div>
   );
 }

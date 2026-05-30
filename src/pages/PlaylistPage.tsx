@@ -116,6 +116,7 @@ export default function PlaylistPage() {
               onPlay={playSong}
               onAction={handleRemoveTrack}
               actionIcon={<RemoveIcon />}
+              onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
             />
           ))}
         </div>

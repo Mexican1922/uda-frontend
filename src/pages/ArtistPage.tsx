@@ -78,6 +78,7 @@ export default function ArtistPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [albumsLoading, setAlbumsLoading] = useState(true);
   const [showAllSongs, setShowAllSongs] = useState(false);
+  const [heroImage, setHeroImage] = useState("");
   const [loading, setLoading] = useState(true);
   const [radioLoading, setRadioLoading] = useState(false);
   const [following, setFollowing] = useState(false);
@@ -90,10 +91,14 @@ export default function ArtistPage() {
     setSongs([]);
     setRelated([]);
     setShowAllSongs(false);
+    setHeroImage("");
     musicApi
       .artist(artistName)
       .then(({ data }) => {
         setSongs(data.songs || []);
+        // Prefer the channel banner (wide) then avatar; gradient+initials below
+        // remain the fallback until YouTube returns an image.
+        setHeroImage(data.banner_url || data.image_url || "");
         // Backend related artists are genre-correct; fall back to the local pool
         // only when the LLM call returned nothing (e.g. no Anthropic credit).
         setRelated(
@@ -184,22 +189,33 @@ export default function ArtistPage() {
 
       {/* ── Hero header ──────────────────────────────────────────────────── */}
       <div className="relative h-[260px] overflow-hidden">
-        {/* Gradient fill */}
+        {/* Gradient fill (always present — also the fallback while/if no photo) */}
         <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${from}, ${to})` }} />
+        {/* Real artist photo (channel banner/avatar) when available */}
+        {heroImage && (
+          <img
+            src={heroImage}
+            alt={artistName}
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={() => setHeroImage("")}
+          />
+        )}
         {/* Sheen overlay */}
         <div className="absolute inset-0" style={{ background: "linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 50%,rgba(0,0,0,0.5) 100%)" }} />
-        {/* Large initials watermark */}
-        <div
-          className="absolute -right-5 -top-5 font-extrabold leading-none pointer-events-none select-none"
-          style={{
-            fontFamily: "Syne, sans-serif",
-            fontSize: 200,
-            color: "rgba(255,255,255,0.08)",
-            letterSpacing: "-0.04em",
-          }}
-        >
-          {artistInitials(artistName)}
-        </div>
+        {/* Large initials watermark — only when there's no real photo */}
+        {!heroImage && (
+          <div
+            className="absolute -right-5 -top-5 font-extrabold leading-none pointer-events-none select-none"
+            style={{
+              fontFamily: "Syne, sans-serif",
+              fontSize: 200,
+              color: "rgba(255,255,255,0.08)",
+              letterSpacing: "-0.04em",
+            }}
+          >
+            {artistInitials(artistName)}
+          </div>
+        )}
         {/* Bottom gradient fade */}
         <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(8,8,8,0.25) 0%, rgba(8,8,8,0.9) 100%)" }} />
 

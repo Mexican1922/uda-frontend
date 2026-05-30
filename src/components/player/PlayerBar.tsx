@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   SkipBack, SkipForward, Play, Pause,
   Shuffle, Repeat, Repeat1,
@@ -23,6 +24,15 @@ export default function PlayerBar() {
 
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const playStartRef = useRef<number>(Date.now());
+  const navigate = useNavigate();
+
+  // Tapping the artist name jumps to their page (and closes the player sheet).
+  const goToArtist = (e: React.MouseEvent, name: string) => {
+    e.stopPropagation();
+    if (!name) return;
+    setShowNowPlaying(false);
+    navigate(`/artist/${encodeURIComponent(name)}`);
+  };
 
   // Media Session API
   useEffect(() => {
@@ -117,7 +127,13 @@ export default function PlayerBar() {
                 >
                   {currentSong.title}
                 </p>
-                <p className="text-xs text-[#605850] truncate">{currentSong.artist}</p>
+                <span
+                role="link"
+                onClick={(e) => goToArtist(e, currentSong.artist)}
+                className="text-xs text-[#605850] hover:text-[#e8c97a] truncate block w-fit max-w-full transition-colors"
+              >
+                {currentSong.artist}
+              </span>
               </div>
               <ChevronUp size={14} className="text-[#3a3a3a] flex-shrink-0 mr-1" />
             </button>
@@ -174,7 +190,13 @@ export default function PlayerBar() {
               >
                 {currentSong.title}
               </p>
-              <p className="text-xs text-[#605850] truncate">{currentSong.artist}</p>
+              <span
+                role="link"
+                onClick={(e) => goToArtist(e, currentSong.artist)}
+                className="text-xs text-[#605850] hover:text-[#e8c97a] truncate block w-fit max-w-full transition-colors"
+              >
+                {currentSong.artist}
+              </span>
             </div>
           </button>
 

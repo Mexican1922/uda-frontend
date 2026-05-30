@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, SkipBack, SkipForward, Play, Pause,
   Shuffle, Repeat, Repeat1, Heart, ListPlus,
-  Volume2, VolumeX, Music, Video, Loader2, X, ListMusic, Mic,
+  Volume2, VolumeX, Music, Video, Loader2, X, ListMusic, Mic, Sparkles,
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
-import { libraryApi } from "../../services/api";
+import { useAuthStore } from "../../store/authStore";
+import { libraryApi, recommendationsApi } from "../../services/api";
 import type { Song } from "../../types";
 import AddToPlaylistModal from "../ui/AddToPlaylistModal";
 
@@ -66,10 +68,28 @@ export default function NowPlayingScreen({ onClose }: Props) {
     seekTo, setVolume, toggleMute, toggleVideoMode, jumpTo, removeFromQueue,
     setNowPlayingOpen, setAlbumArtBounds,
   } = usePlayerStore();
+  const showToast = usePlayerStore((s) => s.showToast);
+  const isGuest = useAuthStore((s) => s.isGuest);
+
+  const navigate = useNavigate();
+
+  // Tapping any artist name closes the player sheet and opens their page.
+  const goToArtist = (e: React.MouseEvent, name: string) => {
+    e.stopPropagation();
+    if (!name) return;
+    onClose();
+    navigate(`/artist/${encodeURIComponent(name)}`);
+  };
 
   const [tab, setTab]               = useState<"playing" | "lyrics" | "queue">("playing");
   const [saved, setSaved]           = useState(false);
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
+
+  // Lyrics Decoder — tap a line to translate Naija slang to plain English.
+  const [decodeMode, setDecodeMode]     = useState(false);
+  const [expandedLine, setExpandedLine] = useState<string | null>(null);
+  const [decodingLine, setDecodingLine] = useState<string | null>(null);
+  const [explanations, setExplanations] = useState<Record<string, string>>({});
 
   // Lyrics
   const [syncedLyrics, setSyncedLyrics]   = useState<LrcLine[]>([]);
@@ -128,6 +148,8 @@ export default function NowPlayingScreen({ onClose }: Props) {
     setActiveLine(-1);
     setLyricsFound(true);
     setLyricsLoading(true);
+    setExpandedLine(null);
+    setExplanations({});
     fetchLyrics(currentSong.title, currentSong.artist).then(({ synced, plain }) => {
       setSyncedLyrics(synced);
       setPlainLyrics(plain);
@@ -178,6 +200,28 @@ export default function NowPlayingScreen({ onClose }: Props) {
   };
 
   const seekToLine = (time: number) => seekTo(time);
+
+  // Lyrics Decoder: in decode mode, tapping a line asks Claude what it means
+  // (Pidgin/Yoruba/Igbo/slang → plain English) instead of seeking to it.
+  const handleLineTap = (text: string, time?: number) => {
+    if (!decodeMode) {
+      if (time !== undefined) seekToLine(time);
+      return;
+    }
+    const line = text.trim();
+    if (!line) return;
+    // Toggle closed if already open.
+    if (expandedLine === line) { setExpandedLine(null); return; }
+    setExpandedLine(line);
+    if (explanations[line] || decodingLine) return;   // cached or busy
+    if (isGuest) { showToast("Sign in to decode lyrics"); setExpandedLine(null); return; }
+    setDecodingLine(line);
+    recommendationsApi
+      .explainLyric({ line, title: currentSong.title, artist: currentSong.artist })
+      .then(({ data }) => setExplanations((prev) => ({ ...prev, [line]: data.explanation })))
+      .catch(() => { showToast("Couldn't decode that line"); setExpandedLine(null); })
+      .finally(() => setDecodingLine(null));
+  };
 
   const fmt = (s: number) => {
     const m   = Math.floor(s / 60);
@@ -301,7 +345,13 @@ export default function NowPlayingScreen({ onClose }: Props) {
                 >
                   {currentSong.title}
                 </h2>
-                <p className="text-sm text-[#605850] truncate mt-1">{currentSong.artist}</p>
+                <span
+                  role="link"
+                  onClick={(e) => goToArtist(e, currentSong.artist)}
+                  className="text-sm text-[#605850] hover:text-[#e8c97a] truncate mt-1 block w-fit max-w-full transition-colors"
+                >
+                  {currentSong.artist}
+                </span>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0 pt-1">
                 <button
@@ -398,6 +448,28 @@ export default function NowPlayingScreen({ onClose }: Props) {
                 <Video size={24} className="text-white/25" />
               </div>
             )}
+
+            {/* Lyrics Decoder toggle — tap a line to translate Naija slang */}
+            {!lyricsLoading && lyricsFound && (
+              <div className="flex items-center justify-between px-4 pb-2 flex-shrink-0">
+                <span className="text-[10px] text-[#3a3a3a] uppercase tracking-widest">
+                  {decodeMode ? "Tap a line to decode" : "Lyrics"}
+                </span>
+                <button
+                  onClick={() => { setDecodeMode((d) => !d); setExpandedLine(null); }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                    decodeMode
+                      ? "bg-[#c9a84c1a] border-[#c9a84c55] text-[#e8c97a]"
+                      : "border-[#2a2a2a] text-[#605850] hover:text-[#b8b0a0] hover:border-[#3a3a3a]"
+                  }`}
+                  style={{ fontFamily: "Syne, sans-serif" }}
+                  title="Translate Pidgin/Yoruba/Igbo slang to plain English"
+                >
+                  <Sparkles size={12} />
+                  Decode
+                </button>
+              </div>
+            )}
             {lyricsLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -426,21 +498,28 @@ export default function NowPlayingScreen({ onClose }: Props) {
                   {syncedLyrics.map((line, i) => {
                     const isActive = i === activeLine;
                     const isPast   = i < activeLine;
+                    const key = line.text.trim();
                     return (
-                      <div
-                        key={i}
-                        ref={isActive ? activeLineRef : null}
-                        onClick={() => seekToLine(line.time)}
-                        className={`text-center cursor-pointer select-none transition-all duration-300 leading-snug ${
-                          isActive
-                            ? "text-[#e8c97a] text-xl font-bold scale-[1.08]"
-                            : isPast
-                              ? "text-[#2a2a2a] text-base"
-                              : "text-[#605850] text-base hover:text-[#b8b0a0]"
-                        }`}
-                        style={isActive ? { fontFamily: "Syne, sans-serif" } : {}}
-                      >
-                        {line.text}
+                      <div key={i} ref={isActive ? activeLineRef : null} className="w-full flex flex-col items-center">
+                        <div
+                          onClick={() => handleLineTap(line.text, line.time)}
+                          className={`text-center cursor-pointer select-none transition-all duration-300 leading-snug ${
+                            decodeMode && expandedLine === key ? "text-[#e8c97a]" :
+                            isActive
+                              ? "text-[#e8c97a] text-xl font-bold scale-[1.08]"
+                              : isPast
+                                ? "text-[#2a2a2a] text-base"
+                                : "text-[#605850] text-base hover:text-[#b8b0a0]"
+                          }`}
+                          style={isActive ? { fontFamily: "Syne, sans-serif" } : {}}
+                        >
+                          {line.text}
+                        </div>
+                        <LyricExplanation
+                          show={decodeMode && expandedLine === key}
+                          loading={decodingLine === key}
+                          text={explanations[key]}
+                        />
                       </div>
                     );
                   })}
@@ -450,9 +529,31 @@ export default function NowPlayingScreen({ onClose }: Props) {
 
             ) : (
               <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-6">
-                <pre className="text-[#605850] text-sm whitespace-pre-wrap leading-relaxed font-sans text-center">
-                  {plainLyrics}
-                </pre>
+                <div className="flex flex-col items-center gap-1.5 pb-24">
+                  {plainLyrics.split("\n").map((raw, i) => {
+                    const key = raw.trim();
+                    if (!key) return <div key={i} className="h-3" />;
+                    return (
+                      <div key={i} className="w-full flex flex-col items-center">
+                        <div
+                          onClick={() => handleLineTap(raw)}
+                          className={`text-center text-sm leading-relaxed select-none transition-colors ${
+                            decodeMode
+                              ? `cursor-pointer ${expandedLine === key ? "text-[#e8c97a]" : "text-[#605850] hover:text-[#b8b0a0]"}`
+                              : "text-[#605850]"
+                          }`}
+                        >
+                          {raw}
+                        </div>
+                        <LyricExplanation
+                          show={decodeMode && expandedLine === key}
+                          loading={decodingLine === key}
+                          text={explanations[key]}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -468,7 +569,13 @@ export default function NowPlayingScreen({ onClose }: Props) {
                 <p className="text-sm font-medium text-[#e8c97a] truncate" style={{ fontFamily: "Syne, sans-serif" }}>
                   {currentSong.title}
                 </p>
-                <p className="text-xs text-[#605850] truncate mt-0.5">{currentSong.artist}</p>
+                <span
+                  role="link"
+                  onClick={(e) => goToArtist(e, currentSong.artist)}
+                  className="text-xs text-[#605850] hover:text-[#e8c97a] truncate mt-0.5 block w-fit max-w-full transition-colors"
+                >
+                  {currentSong.artist}
+                </span>
               </div>
               {isPlaying ? <Pause size={16} className="text-[#e8c97a] flex-shrink-0" fill="currentColor" />
                          : <Play size={16} className="text-[#e8c97a] flex-shrink-0" fill="currentColor" />}
@@ -509,7 +616,13 @@ export default function NowPlayingScreen({ onClose }: Props) {
                       <img src={song.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{song.title}</p>
-                        <p className="text-xs text-[#605850] truncate mt-0.5">{song.artist}</p>
+                        <span
+                          role="link"
+                          onClick={(e) => goToArtist(e, song.artist)}
+                          className="text-xs text-[#605850] hover:text-[#e8c97a] truncate mt-0.5 block w-fit max-w-full transition-colors"
+                        >
+                          {song.artist}
+                        </span>
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); removeFromQueue(realIndex); }}
@@ -529,6 +642,26 @@ export default function NowPlayingScreen({ onClose }: Props) {
 
       {playlistSong && (
         <AddToPlaylistModal song={playlistSong} onClose={() => setPlaylistSong(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Lyrics Decoder explanation bubble ─────────────────────────────────────────
+function LyricExplanation({ show, loading, text }: { show: boolean; loading: boolean; text?: string }) {
+  if (!show) return null;
+  return (
+    <div className="mt-2 mb-1 max-w-md w-full px-3.5 py-2.5 rounded-xl bg-[#c9a84c0d] border border-[#c9a84c22] text-left">
+      {loading ? (
+        <div className="flex items-center gap-2 text-[#605850]">
+          <Loader2 size={13} className="animate-spin" />
+          <span className="text-xs">Decoding…</span>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2">
+          <Sparkles size={13} className="text-[#e8c97a] mt-0.5 flex-shrink-0" />
+          <p className="text-[13px] text-[#b8b0a0] leading-relaxed">{text}</p>
+        </div>
       )}
     </div>
   );

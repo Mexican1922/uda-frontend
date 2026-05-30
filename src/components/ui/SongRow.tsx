@@ -28,8 +28,6 @@ interface Props {
   /** Secondary action (add to playlist) */
   onSecondAction?: (song: Song) => void;
   secondActionIcon?: React.ReactNode;
-  /** Show emerald offline/downloaded badge on thumbnail */
-  offline?: boolean;
   /** Share action */
   onShare?: (song: Song) => void;
   /** Navigate to artist page */
@@ -53,7 +51,6 @@ export default function SongRow({
   actionIcon,
   onSecondAction,
   secondActionIcon,
-  offline,
   onShare,
   onArtistClick,
 }: Props) {
@@ -121,49 +118,23 @@ export default function SongRow({
         )}
       </div>
 
-      {/* Thumbnail + optional offline badge */}
+      {/* Thumbnail */}
       <div className="relative w-11 h-11 flex-shrink-0">
         <img
           src={song.thumbnail_url}
           alt={song.title}
           className="w-full h-full rounded-lg object-cover"
         />
-        {offline && (
-          <div
-            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#080808] flex items-center justify-center"
-            style={{ background: "#2dbe8a" }}
-            title="Available offline"
-          >
-            <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2v12" /><path d="M7 10l5 5 5-5" />
-            </svg>
-          </div>
-        )}
       </div>
 
       {/* Title + artist */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <p
-            className={`text-sm font-medium truncate ${isActive ? "text-[#e8c97a]" : "text-[#f5f0e8]"}`}
-            style={{ fontFamily: "Syne, sans-serif" }}
-          >
-            {song.title}
-          </p>
-          {offline && (
-            <span
-              className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-              style={{
-                background: "rgba(45,190,138,0.15)",
-                border: "1px solid rgba(45,190,138,0.35)",
-                color: "#2dbe8a",
-                letterSpacing: "0.08em",
-              }}
-            >
-              OFFLINE
-            </span>
-          )}
-        </div>
+        <p
+          className={`text-sm font-medium truncate ${isActive ? "text-[#e8c97a]" : "text-[#f5f0e8]"}`}
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          {song.title}
+        </p>
         {onArtistClick ? (
           <button
             onClick={(e) => { e.stopPropagation(); onArtistClick(song.artist); }}

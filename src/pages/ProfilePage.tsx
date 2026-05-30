@@ -215,6 +215,7 @@ export default function ProfilePage() {
                 index={i}
                 queue={recentHistory}
                 onPlay={playSong}
+                onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
               />
             ))}
           </div>
