@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Search, BookOpen, LogOut } from "lucide-react";
+import { Home, Search, BookOpen, LogOut, LogIn } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import { authApi } from "../../services/api";
 
@@ -10,7 +10,7 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-  const { user, logout, refreshToken } = useAuthStore();
+  const { user, logout, refreshToken, isGuest } = useAuthStore();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -62,29 +62,46 @@ export default function Sidebar() {
 
       {/* User section */}
       <div className="mt-auto">
-        <NavLink
-          to="/profile"
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 mb-2 ${
-              isActive ? "bg-[#c9a84c15] text-[#e8c97a]" : "text-[#605850] hover:text-[#b8b0a0] hover:bg-[#ffffff08]"
-            }`
-          }
-        >
-          <div className="w-7 h-7 rounded-full bg-[#c9a84c22] border border-[#c9a84c44] flex items-center justify-center text-xs text-[#e8c97a] font-bold flex-shrink-0">
-            {user?.display_name?.[0]?.toUpperCase() || user?.username?.[0]?.toUpperCase() || "U"}
-          </div>
-          <span className="truncate" style={{ fontFamily: "Syne, sans-serif" }}>
-            {user?.display_name || user?.username}
-          </span>
-        </NavLink>
+        {isGuest ? (
+          <button
+            onClick={() => { logout(); navigate("/login"); }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[#080808] transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{
+              fontFamily: "Syne, sans-serif",
+              background: "linear-gradient(180deg, #e8c97a 0%, #c9a84c 100%)",
+              boxShadow: "0 4px 14px rgba(201,168,76,0.3)",
+            }}
+          >
+            <LogIn size={15} strokeWidth={2} className="flex-shrink-0" />
+            <span>Sign in / Sign up</span>
+          </button>
+        ) : (
+          <>
+            <NavLink
+              to="/profile"
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 mb-2 ${
+                  isActive ? "bg-[#c9a84c15] text-[#e8c97a]" : "text-[#605850] hover:text-[#b8b0a0] hover:bg-[#ffffff08]"
+                }`
+              }
+            >
+              <div className="w-7 h-7 rounded-full bg-[#c9a84c22] border border-[#c9a84c44] flex items-center justify-center text-xs text-[#e8c97a] font-bold flex-shrink-0">
+                {user?.display_name?.[0]?.toUpperCase() || user?.username?.[0]?.toUpperCase() || "U"}
+              </div>
+              <span className="truncate" style={{ fontFamily: "Syne, sans-serif" }}>
+                {user?.display_name || user?.username}
+              </span>
+            </NavLink>
 
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-[#3a3a3a] hover:text-[#605850] transition-colors"
-        >
-          <LogOut size={14} strokeWidth={1.8} className="flex-shrink-0" />
-          <span>Sign out</span>
-        </button>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-[#3a3a3a] hover:text-[#605850] transition-colors"
+            >
+              <LogOut size={14} strokeWidth={1.8} className="flex-shrink-0" />
+              <span>Sign out</span>
+            </button>
+          </>
+        )}
       </div>
     </aside>
   );

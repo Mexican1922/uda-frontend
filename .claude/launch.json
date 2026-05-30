@@ -5,7 +5,7 @@
       "name": "uda-frontend",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
-      "port": 5179
+      "port": 5177
     }
   ]
 }

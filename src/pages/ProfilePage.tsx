@@ -5,11 +5,13 @@ import { useAuthStore } from "../store/authStore";
 import { usePlayerStore } from "../store/playerStore";
 import type { Song } from "../types";
 import SongRow from "../components/ui/SongRow";
+import GuestPrompt from "../components/ui/GuestPrompt";
+import { UserRound } from "lucide-react";
 import { clientCache, TTL } from "../services/cache";
 import { usePWAInstall } from "../hooks/usePWAInstall";
 
 export default function ProfilePage() {
-  const { user, logout } = useAuthStore();
+  const { user, logout, isGuest } = useAuthStore();
   const { playSong } = usePlayerStore();
   const navigate = useNavigate();
   const [savedCount, setSavedCount] = useState<number | null>(null);
@@ -19,6 +21,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isGuest) { setLoading(false); return; }
     const load = async () => {
       try {
         // History: read from shared cache if HomePage already populated it
@@ -50,7 +53,7 @@ export default function ProfilePage() {
       finally { setLoading(false); }
     };
     load();
-  }, []);
+  }, [isGuest]);
 
   const { canInstall, install, isInstalled } = usePWAInstall();
 
@@ -74,6 +77,26 @@ export default function ProfilePage() {
     historyCount !== null ? Math.round((historyCount * 3) / 60) : null;
 
   const fmt = (n: number | null) => (n === null ? "—" : String(n));
+
+  if (isGuest) {
+    return (
+      <div className="max-w-2xl pb-10">
+        <div className="px-4 md:px-8 pt-6 md:pt-8">
+          <h1
+            className="text-2xl md:text-3xl font-bold text-[#f5f0e8]"
+            style={{ fontFamily: "Syne, sans-serif" }}
+          >
+            Profile
+          </h1>
+        </div>
+        <GuestPrompt
+          icon={<UserRound size={28} />}
+          title="You're browsing as a guest"
+          desc="Sign in to keep your library, listening history, and recommendations in sync everywhere."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl pb-10">

@@ -164,7 +164,7 @@ export default function SongRow({
           <button
             onClick={handleShare}
             title="Share"
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#605850] hover:text-[#e8c97a] p-1 leading-none"
+            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-[#605850] hover:text-[#e8c97a] active:scale-90 p-1 leading-none"
           >
             <ShareRowIcon />
           </button>
@@ -173,7 +173,7 @@ export default function SongRow({
           <button
             onClick={handleSecondAction}
             title="Add to playlist"
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#605850] hover:text-[#e8c97a] p-1 leading-none"
+            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-[#605850] hover:text-[#e8c97a] active:scale-90 p-1 leading-none"
           >
             {secondActionIcon}
           </button>
@@ -181,7 +181,7 @@ export default function SongRow({
         {onAction && actionIcon && (
           <button
             onClick={handleAction}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#605850] hover:text-[#e8c97a] p-1 leading-none"
+            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-[#605850] hover:text-[#e8c97a] active:scale-90 p-1 leading-none"
           >
             {actionIcon}
           </button>

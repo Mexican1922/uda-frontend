@@ -19,7 +19,7 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { setAuth } = useAuthStore();
+  const { setAuth, continueAsGuest } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
@@ -189,7 +189,7 @@ export default function LoginPage() {
         {/* Continue as guest */}
         <button
           type="button"
-          onClick={() => navigate("/")}
+          onClick={() => { continueAsGuest(); navigate("/"); }}
           className="w-full h-12 rounded-[14px] border border-[#2a2a2a] text-[#f5f0e8] text-sm font-semibold hover:border-[#3a3a3a] hover:bg-white/[0.02] transition-all mt-3"
           style={{ fontFamily: "Syne, sans-serif" }}
         >

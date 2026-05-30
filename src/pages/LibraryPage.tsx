@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Play, Music2, Heart } from "lucide-react";
 import { libraryApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
+import { useAuthStore } from "../store/authStore";
 import type { Playlist, SavedSong, Song } from "../types";
 import SongRow from "../components/ui/SongRow";
+import GuestPrompt from "../components/ui/GuestPrompt";
 
 type Tab = "songs" | "playlists";
 
@@ -17,9 +19,11 @@ export default function LibraryPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const { playSong } = usePlayerStore();
+  const isGuest = useAuthStore((s) => s.isGuest);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (isGuest) { setLoading(false); return; }
     const load = async () => {
       setLoading(true);
       try {
@@ -35,7 +39,7 @@ export default function LibraryPage() {
       }
     };
     load();
-  }, []);
+  }, [isGuest]);
 
   const handleUnsave = async (song: Song) => {
     try {
@@ -64,6 +68,24 @@ export default function LibraryPage() {
   };
 
   const songs = savedSongs.map((s) => s.song);
+
+  if (isGuest) {
+    return (
+      <div className="px-4 md:px-8 py-6 md:py-8">
+        <h1
+          className="text-2xl md:text-3xl font-bold text-[#f5f0e8] mb-2"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          Library
+        </h1>
+        <GuestPrompt
+          icon={<Heart size={28} />}
+          title="Your music, saved"
+          desc="Create a free account to save songs, build playlists, and sync across your devices."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 md:px-8 py-6 md:py-8">

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Check, Plus, Play, Shuffle, Radio, Loader2 } from "lucide-react";
 import { musicApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
+import { useAuthStore } from "../store/authStore";
 import type { Song } from "../types";
 import SongRow from "../components/ui/SongRow";
 import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
@@ -64,6 +65,8 @@ export default function ArtistPage() {
   const { name: encodedName } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const { playSong } = usePlayerStore();
+  const showToast = usePlayerStore((s) => s.showToast);
+  const isGuest = useAuthStore((s) => s.isGuest);
 
   const artistName = decodeURIComponent(encodedName || "");
   const [from, to] = artistGradient(artistName);
@@ -270,7 +273,7 @@ export default function ArtistPage() {
               index={i}
               queue={songs}
               onPlay={playSong}
-              onSecondAction={setPlaylistSong}
+              onSecondAction={(s) => isGuest ? showToast("Sign in to build playlists") : setPlaylistSong(s)}
               secondActionIcon={<PlaylistAddIcon />}
               onShare={setShareSong}
             />

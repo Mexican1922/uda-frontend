@@ -19,6 +19,7 @@ function removeRecentSearch(q: string) {
 }
 import { musicApi, recommendationsApi, libraryApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
+import { useAuthStore } from "../store/authStore";
 import type { Song } from "../types";
 import SongRow from "../components/ui/SongRow";
 import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
@@ -50,6 +51,8 @@ export default function SearchPage() {
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const { playSong } = usePlayerStore();
+  const showToast = usePlayerStore((s) => s.showToast);
+  const isGuest = useAuthStore((s) => s.isGuest);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<AnySpeechRecognition>(null);
@@ -86,6 +89,7 @@ export default function SearchPage() {
   };
 
   const handleSave = async (song: Song) => {
+    if (isGuest) { showToast("Sign in to save songs"); return; }
     try {
       await libraryApi.saveSong({
         youtube_id: song.youtube_id,
@@ -228,7 +232,7 @@ export default function SearchPage() {
         </button>
         <button
           type="button"
-          onClick={() => setIsNL(true)}
+          onClick={() => isGuest ? showToast("Sign in to use AI Search") : setIsNL(true)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all border ${
             isNL
               ? "bg-[#2dbe8a22] border-[#2dbe8a44] text-[#2dbe8a]"
@@ -306,7 +310,7 @@ export default function SearchPage() {
               onPlay={playSong}
               onAction={handleSave}
               actionIcon={<HeartIcon />}
-              onSecondAction={setPlaylistSong}
+              onSecondAction={(s) => isGuest ? showToast("Sign in to build playlists") : setPlaylistSong(s)}
               secondActionIcon={<PlaylistAddIcon />}
               onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
             />

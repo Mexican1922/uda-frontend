@@ -24,9 +24,12 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
     if (error.response?.status === 401 && !original._retry) {
+      const refresh = localStorage.getItem("uda_refresh");
+      // Guests (and logged-out users) have no refresh token. Don't bounce them
+      // to /login on a 401 — let the caller handle it gracefully (empty state).
+      if (!refresh) return Promise.reject(error);
       original._retry = true;
       try {
-        const refresh = localStorage.getItem("uda_refresh");
         // Use the absolute backend BASE_URL — a relative path would resolve to
         // the frontend origin in production (Vercel) and 404, silently logging
         // the user out every time the 1-day access token expires.

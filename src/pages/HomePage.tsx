@@ -78,7 +78,9 @@ function artistGradient(name: string): [string, string] {
 
 export default function HomePage() {
   const { playSong } = usePlayerStore();
+  const showToast = usePlayerStore((s) => s.showToast);
   const user = useAuthStore((s) => s.user);
+  const isGuest = useAuthStore((s) => s.isGuest);
   const navigate = useNavigate();
 
   // Recently played
@@ -116,6 +118,7 @@ export default function HomePage() {
 
   // ── Fetch: history + artist mixes ────────────────────────────────────────
   useEffect(() => {
+    if (isGuest) { setLoadingHistory(false); return; }
     // Use the shared cache so ProfilePage can reuse the same response
     const cachedHistory = clientCache.get<any[]>("history");
     const historyPromise = cachedHistory
@@ -165,6 +168,7 @@ export default function HomePage() {
 
   // ── Fetch: New This Week ──────────────────────────────────────────────────
   useEffect(() => {
+    if (isGuest) { setLoadingNew(false); return; }
     const hit = cacheGet<Song[]>("new_this_week", TTL_LONG);
     if (hit) { setNewThisWeek(hit); setLoadingNew(false); return; }
     recommendationsApi
@@ -210,6 +214,7 @@ export default function HomePage() {
 
   // ── Fetch: Made for You / mood ────────────────────────────────────────────
   useEffect(() => {
+    if (isGuest) { setLoadingRec(false); return; }
     const cacheKey = `recs_${activeMood || "default"}`;
     const hit = cacheGet<Song[]>(cacheKey, TTL_SHORT);
     if (hit && !moodClickedRef.current) {
@@ -242,6 +247,7 @@ export default function HomePage() {
   };
 
   const handleSave = async (song: Song) => {
+    if (isGuest) { showToast("Sign in to save songs"); return; }
     try {
       await libraryApi.saveSong({
         youtube_id:    song.youtube_id,
@@ -289,6 +295,31 @@ export default function HomePage() {
         <p className="text-[#605850] text-sm mt-1">What are we feeling today?</p>
       </div>
 
+      {/* Guest sign-in banner */}
+      {isGuest && (
+        <button
+          onClick={() => navigate("/login")}
+          className="w-full mb-8 md:mb-10 rounded-2xl flex items-center gap-4 px-4 py-3.5 text-left transition-all hover:brightness-110 active:scale-[0.99]"
+          style={{
+            background: "linear-gradient(135deg, rgba(201,168,76,0.14), rgba(201,168,76,0.04))",
+            border: "1px solid rgba(201,168,76,0.28)",
+          }}
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#e8c97a]" style={{ fontFamily: "Syne, sans-serif" }}>
+              You're browsing as a guest
+            </p>
+            <p className="text-xs text-[#605850] mt-0.5">Sign in to save songs, build playlists & sync across devices</p>
+          </div>
+          <span
+            className="flex-shrink-0 px-4 py-2 rounded-lg text-xs font-bold text-[#080808]"
+            style={{ fontFamily: "Syne, sans-serif", background: "linear-gradient(180deg, #e8c97a 0%, #c9a84c 100%)" }}
+          >
+            Sign in
+          </span>
+        </button>
+      )}
+
       {/* ── Recently Played ──────────────────────────────────────────────── */}
       {(loadingHistory || recentlyPlayed.length > 0) && (
         <Section title="Recently Played">
@@ -310,6 +341,7 @@ export default function HomePage() {
       )}
 
       {/* ── New This Week ────────────────────────────────────────────────── */}
+      {!isGuest && (
       <Section title="New This Week" subtitle="Fresh from your favourite artists">
         {loadingNew ? (
           <CardScrollSkeleton />
@@ -330,6 +362,7 @@ export default function HomePage() {
           </HorizontalScroll>
         )}
       </Section>
+      )}
 
       {/* ── Your Artist Mixes ────────────────────────────────────────────── */}
       {!loadingHistory && artistMixes.length > 0 && (
@@ -348,6 +381,8 @@ export default function HomePage() {
       )}
 
       {/* ── Mood selector ────────────────────────────────────────────────── */}
+      {!isGuest && (
+      <>
       <div className="mb-5 flex gap-2 overflow-x-auto no-scrollbar -mx-4 md:mx-0 px-4 md:px-0 pb-1">
         {MOODS.map((mood) => (
           <button
@@ -394,7 +429,7 @@ export default function HomePage() {
                 onPlay={playSong}
                 onAction={handleSave}
                 actionIcon={<HeartIcon />}
-                onSecondAction={setPlaylistSong}
+                onSecondAction={(s) => isGuest ? showToast("Sign in to build playlists") : setPlaylistSong(s)}
                 secondActionIcon={<PlaylistAddIcon />}
                 onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
               />
@@ -410,6 +445,8 @@ export default function HomePage() {
           </div>
         )}
       </Section>
+      </>
+      )}
 
       {/* ── Trending in Naija ────────────────────────────────────────────── */}
       <Section title="Trending in Naija" subtitle="Hot right now">

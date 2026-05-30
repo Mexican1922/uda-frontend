@@ -36,7 +36,7 @@ export default function SongCard({ song, queue, onPlay }: Props) {
               : "opacity-0 group-hover:opacity-100 bg-black/40"
           }`}
         >
-          <div className="w-10 h-10 bg-[#e8c97a] rounded-full flex items-center justify-center shadow-lg">
+          <div className="w-10 h-10 bg-[#e8c97a] rounded-full flex items-center justify-center shadow-lg transition-transform group-active:scale-90">
             {isActive && isPlaying
               ? <Pause size={16} fill="currentColor" className="text-[#080808]" />
               : <Play size={16} fill="currentColor" className="text-[#080808] ml-[2px]" />

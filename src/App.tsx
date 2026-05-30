@@ -15,7 +15,8 @@ import DownloadsPage from "./pages/DownloadsPage";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+  const isGuest = useAuthStore((s) => s.isGuest);
+  return isAuthenticated || isGuest ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
 export default function App() {

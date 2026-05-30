@@ -89,8 +89,9 @@ export default function PlayerBar() {
 
         {/* ── Mobile layout ─────────────────────────── */}
         <div className="md:hidden">
-          {/* Slim seekable progress strip */}
-          <div onClick={handleSeek} className="h-0.5 bg-[#1a1a1a] cursor-pointer">
+          {/* Slim seekable progress strip — thin visual, tall touch target */}
+          <div onClick={handleSeek} className="relative h-0.5 bg-[#1a1a1a] cursor-pointer group">
+            <div className="absolute -top-2 -bottom-2 left-0 right-0" />
             <div
               className="h-full bg-[#e8c97a] transition-all duration-300"
               style={{ width: `${progress}%` }}
@@ -132,7 +133,7 @@ export default function PlayerBar() {
               </button>
               <button
                 onClick={togglePlay}
-                className="w-9 h-9 rounded-full bg-[#e8c97a] text-[#080808] flex items-center justify-center hover:bg-[#c9a84c] transition-colors flex-shrink-0"
+                className="w-9 h-9 rounded-full bg-[#e8c97a] text-[#080808] flex items-center justify-center hover:bg-[#c9a84c] active:scale-90 transition-all flex-shrink-0"
               >
                 {isPlaying
                   ? <Pause size={16} fill="currentColor" />
@@ -195,7 +196,7 @@ export default function PlayerBar() {
               </button>
               <button
                 onClick={togglePlay}
-                className="w-10 h-10 rounded-full bg-[#e8c97a] text-[#080808] flex items-center justify-center hover:bg-[#c9a84c] transition-colors flex-shrink-0"
+                className="w-10 h-10 rounded-full bg-[#e8c97a] text-[#080808] flex items-center justify-center hover:bg-[#c9a84c] hover:scale-105 active:scale-95 transition-all flex-shrink-0"
               >
                 {isPlaying
                   ? <Pause size={18} fill="currentColor" />
