@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Plus, Play, Shuffle, Radio, Loader2 } from "lucide-react";
+import { ChevronLeft, Check, Plus, Play, Shuffle, Radio, Disc3, ChevronDown, Loader2 } from "lucide-react";
 import { musicApi, libraryApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import { useAuthStore } from "../store/authStore";
-import type { Song } from "../types";
+import type { Song, Album } from "../types";
 import SongRow from "../components/ui/SongRow";
 import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
 import ShareSheet from "../components/ui/ShareSheet";
@@ -75,6 +75,9 @@ export default function ArtistPage() {
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [related, setRelated] = useState<string[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [albumsLoading, setAlbumsLoading] = useState(true);
+  const [showAllSongs, setShowAllSongs] = useState(false);
   const [loading, setLoading] = useState(true);
   const [radioLoading, setRadioLoading] = useState(false);
   const [following, setFollowing] = useState(false);
@@ -86,6 +89,7 @@ export default function ArtistPage() {
     setLoading(true);
     setSongs([]);
     setRelated([]);
+    setShowAllSongs(false);
     musicApi
       .artist(artistName)
       .then(({ data }) => {
@@ -100,6 +104,18 @@ export default function ArtistPage() {
       })
       .catch(() => setRelated(relatedArtists(artistName)))
       .finally(() => setLoading(false));
+  }, [artistName]);
+
+  // Albums load independently — slower (YouTube playlist search) so it shouldn't
+  // hold up the songs list.
+  useEffect(() => {
+    setAlbumsLoading(true);
+    setAlbums([]);
+    musicApi
+      .artistAlbums(artistName)
+      .then(({ data }) => setAlbums(data.results || []))
+      .catch(() => setAlbums([]))
+      .finally(() => setAlbumsLoading(false));
   }, [artistName]);
 
   // Load whether the logged-in user already follows this artist.
@@ -230,24 +246,7 @@ export default function ArtistPage() {
           Play
         </button>
 
-        {/* Radio — blended mix of this artist + similar artists */}
-        <button
-          onClick={handleRadio}
-          disabled={songs.length === 0 || radioLoading}
-          title="Start a mix based on this artist"
-          className="h-11 px-4 rounded-full flex items-center gap-2 font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
-          style={{
-            fontFamily: "Syne, sans-serif",
-            letterSpacing: "0.04em",
-            background: "transparent",
-            border: "1px solid #2a2a2a",
-          }}
-        >
-          {radioLoading ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />}
-          Radio
-        </button>
-
-        {/* Shuffle — icon only to keep the row compact */}
+        {/* Shuffle — icon only */}
         <button
           onClick={handleShuffle}
           disabled={songs.length === 0}
@@ -273,6 +272,41 @@ export default function ArtistPage() {
         >
           {following ? <Check size={13} /> : <Plus size={13} />}
           {following ? "Following" : "Follow"}
+        </button>
+      </div>
+
+      {/* ── Stations: Radio + Mix ────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-2.5 px-4 mb-6">
+        {/* Radio — blended mix of this artist + similar artists */}
+        <button
+          onClick={handleRadio}
+          disabled={songs.length === 0 || radioLoading}
+          className="relative h-[68px] rounded-2xl overflow-hidden flex items-center gap-3 px-3.5 text-left disabled:opacity-40 transition-transform active:scale-[0.98]"
+          style={{ background: "linear-gradient(135deg, #7c3aed, #220546)" }}
+        >
+          <span className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+            {radioLoading ? <Loader2 size={16} className="animate-spin text-white" /> : <Radio size={16} className="text-white" />}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-white leading-tight" style={{ fontFamily: "Syne, sans-serif" }}>Radio</span>
+            <span className="block text-[10.5px] text-white/65 truncate">{artistName} & similar</span>
+          </span>
+        </button>
+
+        {/* Mix — this artist's own catalogue, shuffled */}
+        <button
+          onClick={handleShuffle}
+          disabled={songs.length === 0}
+          className="relative h-[68px] rounded-2xl overflow-hidden flex items-center gap-3 px-3.5 text-left disabled:opacity-40 transition-transform active:scale-[0.98]"
+          style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
+        >
+          <span className="w-9 h-9 rounded-full bg-black/25 flex items-center justify-center flex-shrink-0">
+            <Disc3 size={16} className="text-white" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-white leading-tight" style={{ fontFamily: "Syne, sans-serif" }}>Mix</span>
+            <span className="block text-[10.5px] text-white/70 truncate">Deep cuts, shuffled</span>
+          </span>
         </button>
       </div>
 
@@ -302,8 +336,9 @@ export default function ArtistPage() {
       ) : songs.length === 0 ? (
         <p className="text-sm text-[#3a3a3a] px-4 py-6">No songs found for this artist.</p>
       ) : (
+        <>
         <div className="flex flex-col gap-1 px-1">
-          {songs.map((song, i) => (
+          {(showAllSongs ? songs : songs.slice(0, 6)).map((song, i) => (
             <SongRow
               key={song.youtube_id}
               song={song}
@@ -315,6 +350,63 @@ export default function ArtistPage() {
               onShare={setShareSong}
             />
           ))}
+        </div>
+        {songs.length > 6 && (
+          <button
+            onClick={() => setShowAllSongs((v) => !v)}
+            className="flex items-center gap-1.5 mx-4 mt-3 text-xs font-semibold text-[#b8b0a0] hover:text-[#e8c97a] transition-colors"
+            style={{ fontFamily: "Syne, sans-serif" }}
+          >
+            {showAllSongs ? "Show less" : `Show all ${songs.length} songs`}
+            <ChevronDown size={14} className={`transition-transform ${showAllSongs ? "rotate-180" : ""}`} />
+          </button>
+        )}
+        </>
+      )}
+
+      {/* ── Albums ───────────────────────────────────────────────────────── */}
+      {(albumsLoading || albums.length > 0) && (
+        <div className="mt-8">
+          <div className="px-4 mb-3">
+            <h2 className="text-sm font-semibold text-[#f5f0e8]" style={{ fontFamily: "Syne, sans-serif" }}>
+              Albums
+            </h2>
+          </div>
+          {albumsLoading ? (
+            <div className="flex gap-4 overflow-x-auto no-scrollbar -mx-4 px-4 pb-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex-shrink-0 w-32">
+                  <div className="w-32 h-32 rounded-xl bg-[#1a1a1a] animate-pulse mb-2" />
+                  <div className="h-3 w-3/4 bg-[#1a1a1a] rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex gap-4 overflow-x-auto no-scrollbar -mx-4 px-4 pb-2">
+              {albums.map((album) => (
+                <button
+                  key={album.playlist_id}
+                  onClick={() => navigate(`/album/${album.playlist_id}`)}
+                  className="flex-shrink-0 w-32 text-left group focus:outline-none"
+                  title={album.title}
+                >
+                  <div className="relative mb-2">
+                    <img
+                      src={album.thumbnail_url}
+                      alt={album.title}
+                      className="w-32 h-32 rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                    />
+                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-black/60 text-[#e8c97a] backdrop-blur-sm">
+                      {album.track_count} tracks
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium truncate leading-tight text-[#f5f0e8]" style={{ fontFamily: "Syne, sans-serif" }}>
+                    {album.title}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -83,6 +83,8 @@ export const musicApi = {
     api.get(`/music/album/${playlistId}/`),
   artist: (name: string) =>
     api.get("/music/artist/", { params: { name } }),
+  artistAlbums: (name: string) =>
+    api.get("/music/artist/albums/", { params: { name } }),
   artistRadio: (name: string) =>
     api.get("/music/artist/radio/", { params: { name } }),
 };
