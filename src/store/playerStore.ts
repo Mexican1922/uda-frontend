@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { Song, RepeatMode } from "../types";
+import type { Song, RepeatMode, SyncDevice, SyncCommand, RemoteSnapshot } from "../types";
+import { getDeviceInfo } from "../services/device";
 
 interface AlbumArtBounds {
   top: number;
@@ -33,6 +34,31 @@ interface PlayerState {
   // Modes
   repeatMode: RepeatMode;
   isShuffled: boolean;
+
+  // Toast notification (e.g. "video unavailable, skipped")
+  toast: string | null;
+  showToast: (msg: string) => void;
+  clearToast: () => void;
+
+  // ── Cross-device sync ──
+  syncDevices: SyncDevice[];        // all online devices for this user (incl. self)
+  activeDeviceId: string | null;    // device currently playing audio (null = none claimed)
+  isRemote: boolean;                // true when another device is active and we control it remotely
+  // Internal sinks wired up by useDeviceSync — let store actions emit realtime events
+  _commandSink: ((cmd: SyncCommand) => void) | null;
+  _transferSink: (() => void) | null;
+  _claimSink: ((deviceId: string) => void) | null;
+  setSyncDevices: (devices: SyncDevice[]) => void;
+  setSyncRole: (activeDeviceId: string | null, isRemote: boolean) => void;
+  registerSyncSinks: (sinks: {
+    command: (cmd: SyncCommand) => void;
+    transfer: () => void;
+    claim: (deviceId: string) => void;
+  }) => void;
+  clearSyncSinks: () => void;
+  applyRemoteSnapshot: (snap: RemoteSnapshot) => void;  // remote applies broadcasted state
+  listenHere: () => void;                               // transfer playback to this device
+  transferTo: (deviceId: string) => void;               // move playback to another device
 
   // Actions
   playSong: (song: Song, queue?: Song[]) => void;
@@ -73,7 +99,62 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   repeatMode: "off",
   isShuffled: false,
 
+  toast: null,
+  showToast: (msg) => {
+    set({ toast: msg });
+    setTimeout(() => set({ toast: null }), 3000);
+  },
+  clearToast: () => set({ toast: null }),
+
+  // ── Cross-device sync ──
+  syncDevices: [],
+  activeDeviceId: null,
+  isRemote: false,
+  _commandSink: null,
+  _transferSink: null,
+  _claimSink: null,
+  setSyncDevices: (syncDevices) => set({ syncDevices }),
+  setSyncRole: (activeDeviceId, isRemote) => set({ activeDeviceId, isRemote }),
+  registerSyncSinks: ({ command, transfer, claim }) =>
+    set({ _commandSink: command, _transferSink: transfer, _claimSink: claim }),
+  clearSyncSinks: () =>
+    set({ _commandSink: null, _transferSink: null, _claimSink: null, isRemote: false, activeDeviceId: null, syncDevices: [] }),
+
+  // A remote device applies the active device's broadcasted playback state.
+  applyRemoteSnapshot: (snap) =>
+    set({
+      currentSong: snap.song,
+      isPlaying: snap.isPlaying,
+      currentTime: snap.currentTime,
+      duration: snap.duration,
+      progress: snap.duration > 0 ? (snap.currentTime / snap.duration) * 100 : 0,
+      queue: snap.queue,
+      currentIndex: snap.currentIndex,
+      repeatMode: snap.repeatMode,
+      isShuffled: snap.isShuffled,
+      isVideoMode: snap.isVideoMode,
+    }),
+
+  // "Listen here" — claim active playback for this device.
+  listenHere: () => {
+    const { _transferSink } = get();
+    _transferSink?.();
+  },
+
+  // Move playback to a specific (other) device.
+  transferTo: (deviceId) => {
+    const { _claimSink, listenHere } = get();
+    if (deviceId === getDeviceInfo().id) { listenHere(); return; }
+    _claimSink?.(deviceId);
+  },
+
   playSong: (song, queue) => {
+    const { isRemote, _commandSink } = get();
+    if (isRemote && _commandSink) {
+      // Audio lives on another device — tell it to play this song.
+      _commandSink({ action: "playSong", song, queue });
+      return;
+    }
     const newQueue = queue || [song];
     const index = newQueue.findIndex((s) => s.youtube_id === song.youtube_id);
     set({
@@ -99,10 +180,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
   },
 
-  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
+  togglePlay: () => {
+    const { isRemote, _commandSink, isPlaying } = get();
+    if (isRemote && _commandSink) {
+      _commandSink({ action: isPlaying ? "pause" : "play" });
+      return;
+    }
+    set({ isPlaying: !isPlaying });
+  },
 
   nextSong: () => {
-    const { queue, currentIndex, repeatMode, isShuffled } = get();
+    const { queue, currentIndex, repeatMode, isShuffled, isRemote, _commandSink } = get();
+    if (isRemote && _commandSink) {
+      _commandSink({ action: "next" });
+      return;
+    }
     if (!queue.length) return;
 
     let next: number;
@@ -132,7 +224,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   prevSong: () => {
-    const { queue, currentIndex, currentTime } = get();
+    const { queue, currentIndex, currentTime, isRemote, _commandSink } = get();
+    if (isRemote && _commandSink) {
+      _commandSink({ action: "prev" });
+      return;
+    }
     // If more than 3 seconds in — restart current song via seekTo
     if (currentTime > 3) {
       set({ progress: 0, currentTime: 0, pendingSeek: 0 });
@@ -153,7 +249,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   // seekTo: updates store AND queues a YouTube player seek
   seekTo: (time: number) => {
-    const { duration } = get();
+    const { duration, isRemote, _commandSink } = get();
+    if (isRemote && _commandSink) {
+      _commandSink({ action: "seek", seek: time });
+      return;
+    }
     set({
       currentTime: time,
       progress: duration > 0 ? (time / duration) * 100 : 0,

@@ -11,7 +11,7 @@ declare global {
 
 export default function YouTubePlayer() {
   const {
-    currentSong, isPlaying, isVideoMode, volume, isMuted,
+    currentSong, isPlaying, isVideoMode, volume, isMuted, isRemote,
     pendingSeek, isNowPlayingOpen, albumArtBounds,
     setProgress, setCurrentTime, setDuration, nextSong, clearPendingSeek,
   } = usePlayerStore();
@@ -37,12 +37,18 @@ export default function YouTubePlayer() {
   // ── Init / change song ───────────────────────────────────────────────────
   useEffect(() => {
     if (!currentSong) return;
+    // Remote devices never play audio — the active device drives playback.
+    if (isRemote) return;
+
+    // Resume position when this device has just taken over (Listen here);
+    // for a fresh song currentTime is 0 so this is a no-op.
+    const startAt = Math.floor(usePlayerStore.getState().currentTime || 0);
 
     const initPlayer = () => {
       if (playerRef.current) {
         // Player already exists — just load the new video
         isReadyRef.current = false; // will be set true again once PLAYING fires
-        playerRef.current.loadVideoById(currentSong.youtube_id);
+        playerRef.current.loadVideoById({ videoId: currentSong.youtube_id, startSeconds: startAt });
         lastSongRef.current = currentSong.youtube_id;
         return;
       }
@@ -57,6 +63,7 @@ export default function YouTubePlayer() {
           rel: 0,
           showinfo: 0,
           playsinline: 1,    // critical for iOS inline playback
+          start: startAt,
         },
         events: {
           onReady: (e: any) => {
@@ -93,6 +100,23 @@ export default function YouTubePlayer() {
               }
             }
           },
+          onError: (e: any) => {
+            // YouTube error codes:
+            // 2   — invalid video id
+            // 5   — HTML5 player error
+            // 100 — video not found / private
+            // 101 — embedding disabled by owner  ← most common
+            // 150 — embedding disabled (same as 101)
+            const { showToast: toast, nextSong: skip } = usePlayerStore.getState();
+            if (e.data === 101 || e.data === 150) {
+              toast("This video can't be embedded — skipping ⏭");
+            } else if (e.data === 100) {
+              toast("Video unavailable — skipping ⏭");
+            } else {
+              toast("Playback error — skipping ⏭");
+            }
+            skip();
+          },
         },
       });
       lastSongRef.current = currentSong.youtube_id;
@@ -104,14 +128,16 @@ export default function YouTubePlayer() {
       window.onYouTubeIframeAPIReady = initPlayer;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSong?.youtube_id]);
+  }, [currentSong?.youtube_id, isRemote]);
 
   // ── Sync play / pause ────────────────────────────────────────────────────
   useEffect(() => {
     if (!playerRef.current || !isReadyRef.current) return;
+    // When this device is a remote controller, keep its player silent.
+    if (isRemote) { playerRef.current.pauseVideo(); return; }
     if (isPlaying) playerRef.current.playVideo();
     else playerRef.current.pauseVideo();
-  }, [isPlaying]);
+  }, [isPlaying, isRemote]);
 
   // ── Sync volume ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -130,7 +156,8 @@ export default function YouTubePlayer() {
   // ── Progress tracking interval ───────────────────────────────────────────
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!isPlaying) return;
+    // Remote devices get their progress from broadcasted snapshots, not the local player.
+    if (!isPlaying || isRemote) return;
 
     intervalRef.current = setInterval(() => {
       if (!playerRef.current || !isReadyRef.current) return;
@@ -143,7 +170,7 @@ export default function YouTubePlayer() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isPlaying]);
+  }, [isPlaying, isRemote]);
 
   // ── Compute position style ───────────────────────────────────────────────
   // When NowPlaying is open + video mode: cover the album art slot exactly.

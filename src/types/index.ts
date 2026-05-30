@@ -7,6 +7,7 @@ export interface User {
   bio: string;
   favourite_genres: string[];
   email_verified: boolean;
+  sync_token?: string;
   date_joined: string;
 }
 
@@ -54,3 +55,36 @@ export interface AuthResponse {
 }
 
 export type RepeatMode = "off" | "one" | "all";
+
+// ── Cross-device playback sync ───────────────────────────────────────────────
+export type DeviceKind = "phone" | "tablet" | "desktop";
+
+export interface SyncDevice {
+  id: string;
+  name: string;
+  kind: DeviceKind;
+  isActive: boolean;
+  activatedAt: number; // ms epoch — used to resolve "who is active" (latest wins)
+}
+
+export type SyncCommandAction = "play" | "pause" | "next" | "prev" | "seek" | "playSong";
+
+export interface SyncCommand {
+  action: SyncCommandAction;
+  seek?: number;
+  song?: Song;
+  queue?: Song[];
+}
+
+// Playback snapshot the active device broadcasts to its remotes.
+export interface RemoteSnapshot {
+  song: Song | null;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  queue: Song[];
+  currentIndex: number;
+  repeatMode: RepeatMode;
+  isShuffled: boolean;
+  isVideoMode: boolean;
+}

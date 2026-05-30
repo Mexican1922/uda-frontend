@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Check, Plus, Play, Shuffle } from "lucide-react";
+import { ChevronLeft, Check, Plus, Play, Shuffle, Radio, Loader2 } from "lucide-react";
 import { musicApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import type { Song } from "../types";
@@ -69,10 +69,11 @@ export default function ArtistPage() {
   const [from, to] = artistGradient(artistName);
   const genre = fakeGenre(artistName);
   const listeners = fakeListeners(artistName);
-  const related = relatedArtists(artistName);
 
   const [songs, setSongs] = useState<Song[]>([]);
+  const [related, setRelated] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [radioLoading, setRadioLoading] = useState(false);
   const [following, setFollowing] = useState(false);
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
   const [shareSong, setShareSong] = useState<Song | null>(null);
@@ -80,10 +81,20 @@ export default function ArtistPage() {
   useEffect(() => {
     setLoading(true);
     setSongs([]);
+    setRelated([]);
     musicApi
-      .search(artistName, 10)
-      .then(({ data }) => setSongs(data.results || []))
-      .catch(() => {})
+      .artist(artistName)
+      .then(({ data }) => {
+        setSongs(data.songs || []);
+        // Backend related artists are genre-correct; fall back to the local pool
+        // only when the LLM call returned nothing (e.g. no Anthropic credit).
+        setRelated(
+          (data.related && data.related.length > 0)
+            ? data.related
+            : relatedArtists(artistName)
+        );
+      })
+      .catch(() => setRelated(relatedArtists(artistName)))
       .finally(() => setLoading(false));
   }, [artistName]);
 
@@ -95,6 +106,22 @@ export default function ArtistPage() {
     if (!songs.length) return;
     const shuffled = [...songs].sort(() => Math.random() - 0.5);
     playSong(shuffled[0], shuffled);
+  };
+
+  // Blended mix: artist's tracks weighted heavily against similar artists.
+  const handleRadio = async () => {
+    if (radioLoading) return;
+    setRadioLoading(true);
+    try {
+      const { data } = await musicApi.artistRadio(artistName);
+      const mix: Song[] = data.results || [];
+      if (mix.length > 0) playSong(mix[0], mix);
+    } catch {
+      // Fall back to just shuffling the artist's own catalogue.
+      handleShuffle();
+    } finally {
+      setRadioLoading(false);
+    }
   };
 
   return (
@@ -164,11 +191,12 @@ export default function ArtistPage() {
           Play
         </button>
 
-        {/* Shuffle */}
+        {/* Radio — blended mix of this artist + similar artists */}
         <button
-          onClick={handleShuffle}
-          disabled={songs.length === 0}
-          className="h-11 px-5 rounded-full flex items-center gap-2 font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
+          onClick={handleRadio}
+          disabled={songs.length === 0 || radioLoading}
+          title="Start a mix based on this artist"
+          className="h-11 px-4 rounded-full flex items-center gap-2 font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
           style={{
             fontFamily: "Syne, sans-serif",
             letterSpacing: "0.04em",
@@ -176,8 +204,19 @@ export default function ArtistPage() {
             border: "1px solid #2a2a2a",
           }}
         >
-          <Shuffle size={13} />
-          Shuffle
+          {radioLoading ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />}
+          Radio
+        </button>
+
+        {/* Shuffle — icon only to keep the row compact */}
+        <button
+          onClick={handleShuffle}
+          disabled={songs.length === 0}
+          title="Shuffle"
+          className="h-11 w-11 rounded-full flex items-center justify-center text-white disabled:opacity-40 transition-opacity flex-shrink-0"
+          style={{ background: "transparent", border: "1px solid #2a2a2a" }}
+        >
+          <Shuffle size={14} />
         </button>
 
         {/* Follow toggle */}

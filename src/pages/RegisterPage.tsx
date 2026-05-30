@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Mail, Lock, Check } from "lucide-react";
 import { authApi } from "../services/api";
+import GoogleButton from "../components/auth/GoogleButton";
 
 const ALL_GENRES = [
   "Afrobeats", "Amapiano", "R&B", "Hip-hop",
@@ -176,6 +177,16 @@ export default function RegisterPage() {
             {loading ? "Creating account…" : "Create account"}
           </button>
         </form>
+
+        {/* OR divider */}
+        <div className="flex items-center gap-3.5 my-6">
+          <div className="flex-1 h-px bg-[#2a2a2a]" />
+          <span className="text-[#3a3a3a]" style={{ fontSize: 11, letterSpacing: "0.16em" }}>OR</span>
+          <div className="flex-1 h-px bg-[#2a2a2a]" />
+        </div>
+
+        {/* Google sign-up */}
+        <GoogleButton onLoadingChange={setLoading} onError={setError} />
 
         <p className="text-center text-sm text-[#605850] mt-6">
           Already have one?{" "}

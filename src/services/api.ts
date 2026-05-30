@@ -27,7 +27,10 @@ api.interceptors.response.use(
       original._retry = true;
       try {
         const refresh = localStorage.getItem("uda_refresh");
-        const { data } = await axios.post("/api/auth/token/refresh/", { refresh });
+        // Use the absolute backend BASE_URL — a relative path would resolve to
+        // the frontend origin in production (Vercel) and 404, silently logging
+        // the user out every time the 1-day access token expires.
+        const { data } = await axios.post(`${BASE_URL}/auth/token/refresh/`, { refresh });
         localStorage.setItem("uda_access", data.access);
         original.headers.Authorization = `Bearer ${data.access}`;
         return api(original);
@@ -58,16 +61,23 @@ export const authApi = {
     api.get("/auth/verify-email/", { params: { uid, token } }),
   resendVerification: (email: string) =>
     api.post("/auth/resend-verification/", { email }),
+  // Google OAuth
+  googleAuth: (access_token: string) =>
+    api.post("/auth/google/", { access_token }),
 };
 
 // ── Music ─────────────────────────────────────────────
 export const musicApi = {
-  search: (q: string, limit = 10) =>
+  search: (q: string, limit = 25) =>
     api.get("/music/search/", { params: { q, limit } }),
   trending: () =>
     api.get("/music/trending/"),
   albums: () =>
     api.get("/music/albums/"),
+  artist: (name: string) =>
+    api.get("/music/artist/", { params: { name } }),
+  artistRadio: (name: string) =>
+    api.get("/music/artist/radio/", { params: { name } }),
 };
 
 // ── Library ───────────────────────────────────────────

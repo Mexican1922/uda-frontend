@@ -64,6 +64,18 @@
   to   { transform: translateY(0);    opacity: 1; }
 }
 
+/* Toast fade-in + slight rise */
+@keyframes uda-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Popover fade-in + rise (no horizontal centering) */
+@keyframes uda-fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @layer utilities {
   .uda-eq-bar {
     transform-origin: bottom;
@@ -75,5 +87,13 @@
 
   .animate-slide-up {
     animation: uda-slide-up 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+
+  .animate-fade-in {
+    animation: uda-fade-in 0.2s ease-out forwards;
+  }
+
+  .animate-fade-in-up {
+    animation: uda-fade-in-up 0.18s ease-out forwards;
   }
 }

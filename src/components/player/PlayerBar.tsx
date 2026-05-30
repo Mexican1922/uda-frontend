@@ -10,6 +10,7 @@ import { usePlayerStore } from "../../store/playerStore";
 import { historyApi } from "../../services/api";
 import YouTubePlayer from "./YouTubePlayer";
 import NowPlayingScreen from "./NowPlayingScreen";
+import DevicePicker, { DeviceBanner } from "./DevicePicker";
 
 export default function PlayerBar() {
   const {
@@ -83,6 +84,9 @@ export default function PlayerBar() {
 
       <div className="fixed z-50 left-0 right-0 bottom-16 md:bottom-0 bg-[#0d0d0d]/95 backdrop-blur-[16px] border-t border-white/10">
 
+        {/* Remote-device banner — where audio is actually playing */}
+        <DeviceBanner />
+
         {/* ── Mobile layout ─────────────────────────── */}
         <div className="md:hidden">
           {/* Slim seekable progress strip */}
@@ -119,6 +123,7 @@ export default function PlayerBar() {
 
             {/* Playback controls */}
             <div className="flex items-center gap-2 flex-shrink-0">
+              <DevicePicker />
               <button
                 onClick={prevSong}
                 className="p-1 text-[#605850] hover:text-[#b8b0a0] transition-colors"
@@ -233,8 +238,9 @@ export default function PlayerBar() {
             </div>
           </div>
 
-          {/* Right — volume + video toggle */}
+          {/* Right — devices + volume + video toggle */}
           <div className="flex items-center gap-4 w-56 justify-end flex-shrink-0">
+            <DevicePicker />
             <button
               onClick={toggleVideoMode}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${

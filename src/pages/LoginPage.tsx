@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { authApi } from "../services/api";
 import { useAuthStore } from "../store/authStore";
+import GoogleButton from "../components/auth/GoogleButton";
 
 // Faint album mosaic background — 12 gradient tiles
 const MOSAIC = [
@@ -179,11 +180,17 @@ export default function LoginPage() {
           <div className="flex-1 h-px bg-[#2a2a2a]" />
         </div>
 
+        {/* Google sign-in */}
+        <GoogleButton
+          onLoadingChange={setLoading}
+          onError={setError}
+        />
+
         {/* Continue as guest */}
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="w-full h-12 rounded-[14px] border border-[#2a2a2a] text-[#f5f0e8] text-sm font-semibold hover:border-[#3a3a3a] hover:bg-white/[0.02] transition-all"
+          className="w-full h-12 rounded-[14px] border border-[#2a2a2a] text-[#f5f0e8] text-sm font-semibold hover:border-[#3a3a3a] hover:bg-white/[0.02] transition-all mt-3"
           style={{ fontFamily: "Syne, sans-serif" }}
         >
           Continue as guest
