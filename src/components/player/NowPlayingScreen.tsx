@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, SkipBack, SkipForward, Play, Pause,
   Shuffle, Repeat, Repeat1, Heart, ListPlus,
-  Volume2, VolumeX, Music, Video, Loader2, X, ListMusic, Mic, Sparkles,
+  Volume2, VolumeX, Music, Video, Loader2, X, ListMusic, Mic, Sparkles, Share2,
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
 import { useAuthStore } from "../../store/authStore";
 import { libraryApi, recommendationsApi } from "../../services/api";
 import type { Song } from "../../types";
 import AddToPlaylistModal from "../ui/AddToPlaylistModal";
+import ShareSheet from "../ui/ShareSheet";
 
 // ── LRCLIB helpers ────────────────────────────────────────────────────────────
 
@@ -90,6 +91,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
   const [decodingLine, setDecodingLine] = useState<string | null>(null);
   const [explanations, setExplanations] = useState<Record<string, string>>({});
+  const [shareLyric, setShareLyric]     = useState<string | null>(null);
 
   // Lyrics
   const [syncedLyrics, setSyncedLyrics]   = useState<LrcLine[]>([]);
@@ -519,6 +521,8 @@ export default function NowPlayingScreen({ onClose }: Props) {
                           show={decodeMode && expandedLine === key}
                           loading={decodingLine === key}
                           text={explanations[key]}
+                          line={key}
+                          onShare={setShareLyric}
                         />
                       </div>
                     );
@@ -549,6 +553,8 @@ export default function NowPlayingScreen({ onClose }: Props) {
                           show={decodeMode && expandedLine === key}
                           loading={decodingLine === key}
                           text={explanations[key]}
+                          line={key}
+                          onShare={setShareLyric}
                         />
                       </div>
                     );
@@ -643,12 +649,18 @@ export default function NowPlayingScreen({ onClose }: Props) {
       {playlistSong && (
         <AddToPlaylistModal song={playlistSong} onClose={() => setPlaylistSong(null)} />
       )}
+
+      {shareLyric && (
+        <ShareSheet song={currentSong} lyricLine={shareLyric} onClose={() => setShareLyric(null)} />
+      )}
     </div>
   );
 }
 
 // ── Lyrics Decoder explanation bubble ─────────────────────────────────────────
-function LyricExplanation({ show, loading, text }: { show: boolean; loading: boolean; text?: string }) {
+function LyricExplanation({ show, loading, text, line, onShare }: {
+  show: boolean; loading: boolean; text?: string; line?: string; onShare?: (line: string) => void;
+}) {
   if (!show) return null;
   return (
     <div className="mt-2 mb-1 max-w-md w-full px-3.5 py-2.5 rounded-xl bg-[#c9a84c0d] border border-[#c9a84c22] text-left">
@@ -658,10 +670,22 @@ function LyricExplanation({ show, loading, text }: { show: boolean; loading: boo
           <span className="text-xs">Decoding…</span>
         </div>
       ) : (
-        <div className="flex items-start gap-2">
-          <Sparkles size={13} className="text-[#e8c97a] mt-0.5 flex-shrink-0" />
-          <p className="text-[13px] text-[#b8b0a0] leading-relaxed">{text}</p>
-        </div>
+        <>
+          <div className="flex items-start gap-2">
+            <Sparkles size={13} className="text-[#e8c97a] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#b8b0a0] leading-relaxed">{text}</p>
+          </div>
+          {text && line && onShare && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onShare(line); }}
+              className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#e8c97a] hover:text-[#f5e0a8] transition-colors"
+              style={{ fontFamily: "Syne, sans-serif" }}
+            >
+              <Share2 size={12} />
+              Share this line
+            </button>
+          )}
+        </>
       )}
     </div>
   );
