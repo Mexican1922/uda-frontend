@@ -11,6 +11,7 @@ import LibraryPage from "./pages/LibraryPage";
 import PlaylistPage from "./pages/PlaylistPage";
 import ProfilePage from "./pages/ProfilePage";
 import ArtistPage from "./pages/ArtistPage";
+import AlbumPage from "./pages/AlbumPage";
 import DownloadsPage from "./pages/DownloadsPage";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="playlist/:id"    element={<PlaylistPage />} />
         <Route path="profile"         element={<ProfilePage />} />
         <Route path="artist/:name"    element={<ArtistPage />} />
+        <Route path="album/:playlistId" element={<AlbumPage />} />
         <Route path="downloads"       element={<DownloadsPage />} />
       </Route>
     </Routes>

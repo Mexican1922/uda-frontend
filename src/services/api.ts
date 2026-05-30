@@ -75,8 +75,12 @@ export const musicApi = {
     api.get("/music/search/", { params: { q, limit } }),
   trending: () =>
     api.get("/music/trending/"),
+  mixes: () =>
+    api.get("/music/mixes/"),
   albums: () =>
     api.get("/music/albums/"),
+  album: (playlistId: string) =>
+    api.get(`/music/album/${playlistId}/`),
   artist: (name: string) =>
     api.get("/music/artist/", { params: { name } }),
   artistRadio: (name: string) =>

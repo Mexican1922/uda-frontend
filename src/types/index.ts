@@ -24,6 +24,14 @@ export interface Song {
   has_video: boolean;
 }
 
+export interface Album {
+  playlist_id: string;
+  title: string;
+  artist: string;
+  thumbnail_url: string;
+  track_count: number;
+}
+
 export interface Playlist {
   id: number;
   name: string;

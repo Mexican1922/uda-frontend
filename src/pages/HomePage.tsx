@@ -11,7 +11,7 @@ import {
 } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import { useAuthStore } from "../store/authStore";
-import type { Song } from "../types";
+import type { Song, Album } from "../types";
 import SongRow  from "../components/ui/SongRow";
 import SongCard from "../components/ui/SongCard";
 import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
@@ -101,9 +101,14 @@ export default function HomePage() {
   const [errorTrending, setErrorTrending] = useState(false);
 
   // Top Albums
-  const [albums, setAlbums]               = useState<Song[]>([]);
+  const [albums, setAlbums]               = useState<Album[]>([]);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
   const [errorAlbums, setErrorAlbums]     = useState(false);
+
+  // Afrobeat Mixes
+  const [mixes, setMixes]                 = useState<Song[]>([]);
+  const [loadingMixes, setLoadingMixes]   = useState(true);
+  const [errorMixes, setErrorMixes]       = useState(false);
 
   // Made for You / mood
   const [recommendations, setRecommendations] = useState<Song[]>([]);
@@ -199,17 +204,32 @@ export default function HomePage() {
 
   // ── Fetch: Top Albums ─────────────────────────────────────────────────────
   useEffect(() => {
-    const hit = cacheGet<Song[]>("albums", TTL_LONG);
+    const hit = cacheGet<Album[]>("albums_v2", TTL_LONG);
     if (hit) { setAlbums(hit); setLoadingAlbums(false); return; }
     musicApi
       .albums()
       .then(({ data }) => {
-        const songs: Song[] = data.results || [];
-        setAlbums(songs); setErrorAlbums(false);
-        if (songs.length) cacheSet("albums", songs, TTL_LONG);
+        const list: Album[] = data.results || [];
+        setAlbums(list); setErrorAlbums(false);
+        if (list.length) cacheSet("albums_v2", list, TTL_LONG);
       })
       .catch(() => { setAlbums([]); setErrorAlbums(true); })
       .finally(() => setLoadingAlbums(false));
+  }, []);
+
+  // ── Fetch: Afrobeat Mixes ─────────────────────────────────────────────────
+  useEffect(() => {
+    const hit = cacheGet<Song[]>("mixes", TTL_LONG);
+    if (hit) { setMixes(hit); setLoadingMixes(false); return; }
+    musicApi
+      .mixes()
+      .then(({ data }) => {
+        const songs: Song[] = data.results || [];
+        setMixes(songs); setErrorMixes(false);
+        if (songs.length) cacheSet("mixes", songs, TTL_LONG);
+      })
+      .catch(() => { setMixes([]); setErrorMixes(true); })
+      .finally(() => setLoadingMixes(false));
   }, []);
 
   // ── Fetch: Made for You / mood ────────────────────────────────────────────
@@ -471,7 +491,7 @@ export default function HomePage() {
       </Section>
 
       {/* ── Top Albums ───────────────────────────────────────────────────── */}
-      <Section title="Top Albums" subtitle="Latest projects from your favourites">
+      <Section title="Top Albums" subtitle="Full projects from your favourites">
         {loadingAlbums ? (
           <CardScrollSkeleton />
         ) : errorAlbums ? (
@@ -480,11 +500,32 @@ export default function HomePage() {
           <SectionEmpty message="Albums loading — check back in a moment." />
         ) : (
           <HorizontalScroll>
-            {albums.map((song) => (
+            {albums.map((album) => (
+              <AlbumCard
+                key={album.playlist_id}
+                album={album}
+                onClick={() => navigate(`/album/${album.playlist_id}`)}
+              />
+            ))}
+          </HorizontalScroll>
+        )}
+      </Section>
+
+      {/* ── Afrobeat Mixes ───────────────────────────────────────────────── */}
+      <Section title="Afrobeat Mixes" subtitle="Long-form DJ sets & party mixes">
+        {loadingMixes ? (
+          <CardScrollSkeleton />
+        ) : errorMixes ? (
+          <SectionError />
+        ) : mixes.length === 0 ? (
+          <SectionEmpty message="No mixes right now — check back soon." />
+        ) : (
+          <HorizontalScroll>
+            {mixes.map((song) => (
               <SongCard
                 key={song.youtube_id}
                 song={song}
-                queue={albums}
+                queue={mixes}
                 onPlay={playSong}
               />
             ))}
@@ -610,6 +651,41 @@ function ArtistMixCard({
           <Play size={16} fill="white" className="text-white ml-0.5" />
         </div>
       </div>
+    </button>
+  );
+}
+
+/** Album cover card — opens the album's tracklist page */
+function AlbumCard({ album, onClick }: { album: Album; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-shrink-0 w-32 md:w-40 text-left group select-none cursor-pointer focus:outline-none"
+      title={`${album.title} — ${album.artist}`}
+    >
+      <div className="relative mb-2.5">
+        <img
+          src={album.thumbnail_url}
+          alt={album.title}
+          className="w-32 h-32 md:w-40 md:h-40 rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+        />
+        <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+          <div className="w-10 h-10 bg-[#e8c97a] rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-all group-active:scale-90">
+            <Play size={16} fill="currentColor" className="text-[#080808] ml-[2px]" />
+          </div>
+        </div>
+        {/* Album badge */}
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-black/60 text-[#e8c97a] backdrop-blur-sm">
+          {album.track_count} tracks
+        </span>
+      </div>
+      <p
+        className="text-xs md:text-sm font-medium truncate leading-tight text-[#f5f0e8]"
+        style={{ fontFamily: "Syne, sans-serif" }}
+      >
+        {album.title}
+      </p>
+      <p className="text-[11px] md:text-xs text-[#605850] truncate mt-0.5">{album.artist}</p>
     </button>
   );
 }

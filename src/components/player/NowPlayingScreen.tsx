@@ -327,7 +327,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
               </button>
               <button
                 onClick={togglePlay}
-                className="w-16 h-16 rounded-full bg-[#e8c97a] text-[#080808] flex items-center justify-center hover:bg-[#c9a84c] transition-colors shadow-lg shadow-[#c9a84c]/20 flex-shrink-0"
+                className="w-16 h-16 rounded-full bg-[#e8c97a] text-[#080808] flex items-center justify-center hover:bg-[#c9a84c] hover:scale-105 active:scale-95 transition-all shadow-lg shadow-[#c9a84c]/20 flex-shrink-0"
               >
                 {isPlaying
                   ? <Pause size={26} fill="currentColor" />
