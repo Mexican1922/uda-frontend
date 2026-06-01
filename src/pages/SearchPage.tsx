@@ -48,6 +48,7 @@ export default function SearchPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [recordError, setRecordError] = useState("");
+  const [searchError, setSearchError] = useState("");
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const { playSong } = usePlayerStore();
@@ -64,6 +65,7 @@ export default function SearchPage() {
     if (!q.trim()) return;
     setLoading(true);
     setInterpreted("");
+    setSearchError("");
     setHasSearched(true);
     addRecentSearch(q.trim());
     setRecentSearches(getRecentSearches());
@@ -76,8 +78,20 @@ export default function SearchPage() {
         const { data } = await musicApi.search(q);
         setResults(data.results ?? []);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setResults([]);
+      // Daily YouTube quota exhausted on the free tier — tell the user plainly
+      // that already-found music still plays and to come back tomorrow.
+      if (err?.response?.status === 503) {
+        setSearchError(
+          err?.response?.data?.code === "quota_exceeded"
+            ? "You’ve hit today’s search limit on the free tier. Everything you’ve already found still plays — come back tomorrow to search for new music. 🎵"
+            : "Search is busy right now — please try again in a moment."
+        );
+      } else {
+        setSearchError("Something went wrong with that search — try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -318,8 +332,17 @@ export default function SearchPage() {
         </div>
       )}
 
+      {/* Search error (e.g. daily free-tier quota reached) */}
+      {!loading && searchError && (
+        <div className="mt-4 px-4 py-4 rounded-xl bg-[#c9a84c10] border border-[#c9a84c33] text-center">
+          <p className="text-sm text-[#e8c97a] font-medium leading-relaxed" style={{ fontFamily: "Syne, sans-serif" }}>
+            {searchError}
+          </p>
+        </div>
+      )}
+
       {/* No results */}
-      {!loading && hasSearched && results.length === 0 && (
+      {!loading && hasSearched && !searchError && results.length === 0 && (
         <div className="text-center py-16">
           <p className="text-[#3a3a3a] text-sm">No results found for "{query}"</p>
         </div>
