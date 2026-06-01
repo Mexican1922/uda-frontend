@@ -104,6 +104,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
   const [decodingLine, setDecodingLine] = useState<string | null>(null);
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const [shareLyric, setShareLyric]     = useState<string | null>(null);
+  const [decodeUnavailable, setDecodeUnavailable] = useState(false);
 
   // Lyrics
   const [syncedLyrics, setSyncedLyrics]   = useState<LrcLine[]>([]);
@@ -236,7 +237,19 @@ export default function NowPlayingScreen({ onClose }: Props) {
     recommendationsApi
       .explainLyric({ line, title: currentSong.title, artist: currentSong.artist })
       .then(({ data }) => setExplanations((prev) => ({ ...prev, [line]: data.explanation })))
-      .catch(() => { showToast("Couldn't decode that line"); setExpandedLine(null); })
+      .catch((err) => {
+        setExpandedLine(null);
+        // 503 = the decoder service itself is down (e.g. AI credit exhausted).
+        // Disable decode mode for the session so users aren't stuck tapping
+        // into repeated errors, and tell them it's not their fault.
+        if (err?.response?.status === 503) {
+          setDecodeUnavailable(true);
+          setDecodeMode(false);
+          showToast("Lyric decoding is temporarily unavailable");
+        } else {
+          showToast("Couldn't decode that line — try again");
+        }
+      })
       .finally(() => setDecodingLine(null));
   };
 
@@ -484,21 +497,27 @@ export default function NowPlayingScreen({ onClose }: Props) {
               </div>
             )}
 
-            {/* Lyrics Decoder toggle — tap a line to translate Naija slang */}
+            {/* Lyrics Decoder toggle — tap a line to translate African lyrics */}
             {!lyricsLoading && lyricsFound && (
               <div className="flex items-center justify-between px-4 pb-2 flex-shrink-0">
                 <span className="text-[10px] text-[#3a3a3a] uppercase tracking-widest">
-                  {decodeMode ? "Tap a line to decode" : "Lyrics"}
+                  {decodeUnavailable ? "Decode unavailable" : decodeMode ? "Tap a line to decode" : "Lyrics"}
                 </span>
                 <button
-                  onClick={() => { setDecodeMode((d) => !d); setExpandedLine(null); }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                  onClick={() => {
+                    if (decodeUnavailable) { showToast("Lyric decoding is temporarily unavailable"); return; }
+                    setDecodeMode((d) => !d); setExpandedLine(null);
+                  }}
+                  disabled={decodeUnavailable}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all disabled:opacity-40 ${
                     decodeMode
                       ? "bg-[#c9a84c1a] border-[#c9a84c55] text-[#e8c97a]"
                       : "border-[#2a2a2a] text-[#605850] hover:text-[#b8b0a0] hover:border-[#3a3a3a]"
                   }`}
                   style={{ fontFamily: "Syne, sans-serif" }}
-                  title="Translate Pidgin/Yoruba/Igbo slang to plain English"
+                  title={decodeUnavailable
+                    ? "Lyric decoding is temporarily unavailable"
+                    : "Translate African lyrics (Pidgin, Yoruba, Zulu, Swahili…) to plain English"}
                 >
                   <Sparkles size={12} />
                   Decode
