@@ -305,7 +305,7 @@ export default function ArtistPage() {
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-bold text-white leading-tight" style={{ fontFamily: "Syne, sans-serif" }}>Radio</span>
-            <span className="block text-[10.5px] text-white/65 truncate">{artistName} & similar</span>
+            <span className="block text-[10.5px] text-white/65 truncate">{artistName} & the genre</span>
           </span>
         </button>
 
@@ -321,7 +321,7 @@ export default function ArtistPage() {
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-bold text-white leading-tight" style={{ fontFamily: "Syne, sans-serif" }}>Mix</span>
-            <span className="block text-[10.5px] text-white/70 truncate">Deep cuts, shuffled</span>
+            <span className="block text-[10.5px] text-white/70 truncate">Songs & features, shuffled</span>
           </span>
         </button>
       </div>
