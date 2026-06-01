@@ -74,6 +74,18 @@ export default function NowPlayingScreen({ onClose }: Props) {
 
   const navigate = useNavigate();
 
+  // Voice control: toggling shows what it actually does, since a bare mic icon
+  // (with no hover tooltip on mobile) doesn't tell users they can speak commands.
+  const handleVoiceToggle = () => {
+    const turningOn = !voiceEnabled;
+    toggleVoice();
+    showToast(
+      turningOn
+        ? "Voice on — say “Ụda, next”, “Ụda pause” or “Ụda play”"
+        : "Voice control off"
+    );
+  };
+
   // Tapping any artist name closes the player sheet and opens their page.
   const goToArtist = (e: React.MouseEvent, name: string) => {
     e.stopPropagation();
@@ -258,8 +270,8 @@ export default function NowPlayingScreen({ onClose }: Props) {
             {/* Voice control toggle — only when the browser supports it */}
             {voiceSupported && (
               <button
-                onClick={toggleVoice}
-                title={voiceEnabled ? "Voice control on — say “Uda, next”" : "Enable voice control"}
+                onClick={handleVoiceToggle}
+                title={voiceEnabled ? "Voice control on — say “Uda, next”" : "Hands-free: tap, then say “Uda, next”"}
                 className={`relative p-2 rounded-full transition-colors ${
                   voiceEnabled ? "text-[#e8c97a]" : "text-[#3a3a3a] hover:text-[#605850]"
                 }`}
@@ -287,6 +299,22 @@ export default function NowPlayingScreen({ onClose }: Props) {
             <span>{isVideoMode ? "Audio" : "Video"}</span>
           </button>
         </div>
+
+        {/* Voice-control hint — explains what the mic does + live listening state */}
+        {voiceSupported && voiceEnabled && (
+          <div className="flex items-center justify-center gap-2 mb-3 -mt-1 px-4">
+            <span
+              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                voiceListening ? "bg-[#e8c97a] animate-pulse" : "bg-[#605850]"
+              }`}
+            />
+            <span className="text-[11px] text-[#b8b0a0] text-center">
+              {voiceListening
+                ? "Listening — say “Ụda, next” · “Ụda pause” · “Ụda play”"
+                : "Voice on — tap the mic again to turn off"}
+            </span>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 self-center mb-4 bg-[#111111]/80 rounded-xl p-1 flex-shrink-0">
