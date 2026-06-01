@@ -24,7 +24,7 @@ export default function AppLayout() {
       {/* Scrollable page content */}
       <main
         className={[
-          "flex-1 min-w-0 overflow-y-auto",
+          "flex-1 min-w-0 overflow-y-auto overflow-x-hidden",
           // Mobile: clear TopBar (56px) at top
           "pt-14 md:pt-0",
           // Bottom: clear BottomNav (64px) + optional PlayerBar (~70px) on mobile
@@ -45,10 +45,10 @@ export default function AppLayout() {
       {/* Toast notification (e.g. "video unavailable, skipped") */}
       {toast && (
         <div
-          style={{ left: "50%" }}
-          className="fixed bottom-[150px] md:bottom-28 z-[100]
-                     px-4 py-2.5 rounded-full text-sm font-medium text-[#f5f0e8]
-                     bg-[#1a1a1a] border border-[#2a2a2a] shadow-xl whitespace-nowrap
+          className="fixed left-1/2 -translate-x-1/2 bottom-[150px] md:bottom-28 z-[100]
+                     px-4 py-2.5 rounded-full text-sm font-medium text-[#f5f0e8] text-center
+                     bg-[#1a1a1a] border border-[#2a2a2a] shadow-xl
+                     max-w-[calc(100vw-2rem)]
                      animate-fade-in"
         >
           {toast}
