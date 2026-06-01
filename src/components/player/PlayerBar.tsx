@@ -3,7 +3,7 @@ import {
   SkipBack, SkipForward, Play, Pause,
   Shuffle, Repeat, Repeat1,
   Volume2, Volume1, VolumeX,
-  Video, Music,
+  Video, Music, Mic,
   ChevronUp,
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
@@ -20,11 +20,26 @@ export default function PlayerBar() {
     togglePlay, nextSong, prevSong, seekTo,
     setVolume, toggleMute, toggleVideoMode,
     toggleRepeat, toggleShuffle,
+    voiceEnabled, voiceSupported, voiceListening, toggleVoice,
   } = usePlayerStore();
+  const showToast = usePlayerStore((s) => s.showToast);
 
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const playStartRef = useRef<number>(Date.now());
   const registerRadioRefill = usePlayerStore((s) => s.registerRadioRefill);
+
+  // Hands-free voice control — same toggle as Now Playing, surfaced here so it's
+  // reachable without opening the full screen. The toast explains the commands
+  // (a bare mic icon is otherwise meaningless to a first-time user).
+  const handleVoiceToggle = () => {
+    const turningOn = !voiceEnabled;
+    toggleVoice();
+    showToast(
+      turningOn
+        ? "Voice on — say “Ụda, next”, “Ụda pause” or “Ụda play”"
+        : "Voice control off"
+    );
+  };
 
   // Endless radio: when a station's queue runs dry, fetch the next artist's
   // tracks so playback rolls on instead of stopping. The store calls this.
@@ -256,6 +271,21 @@ export default function PlayerBar() {
 
           {/* Right — devices + volume + video toggle */}
           <div className="flex items-center gap-4 w-56 justify-end flex-shrink-0">
+            {/* Hands-free voice control (Chromium only) */}
+            {voiceSupported && (
+              <button
+                onClick={handleVoiceToggle}
+                title={voiceEnabled ? "Voice on — say “Uda, next”" : "Hands-free: tap, then say “Uda, next”"}
+                className={`relative transition-colors ${
+                  voiceEnabled ? "text-[#e8c97a]" : "text-[#3a3a3a] hover:text-[#605850]"
+                }`}
+              >
+                <Mic size={16} />
+                {voiceListening && (
+                  <span className="absolute inset-0 -m-1 rounded-full border border-[#e8c97a]/40 animate-ping pointer-events-none" />
+                )}
+              </button>
+            )}
             <DevicePicker />
             <button
               onClick={toggleVideoMode}
