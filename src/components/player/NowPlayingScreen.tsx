@@ -140,9 +140,12 @@ export default function NowPlayingScreen({ onClose }: Props) {
   useLayoutEffect(() => {
     if (isVideoMode && (tab === "playing" || tab === "lyrics")) {
       measureVideoSlot();
-    } else {
-      setAlbumArtBounds(null);
+      // Re-measure after paint so the iframe lands exactly on the slot once the
+      // centered column / async layout has settled (avoids desktop drift).
+      const raf = requestAnimationFrame(measureVideoSlot);
+      return () => cancelAnimationFrame(raf);
     }
+    setAlbumArtBounds(null);
   }, [isVideoMode, tab]);
 
   // Re-measure on resize (orientation change on mobile)
@@ -255,7 +258,9 @@ export default function NowPlayingScreen({ onClose }: Props) {
       />
       <div className="absolute inset-0 bg-[#080808]/70" />
 
-      <div className="relative flex flex-col flex-1 overflow-hidden">
+      {/* Content lives in a centered column so video + lyrics stay aligned on
+          wide desktop screens instead of stretching edge-to-edge. */}
+      <div className="relative flex flex-col flex-1 overflow-hidden w-full max-w-2xl mx-auto">
 
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
@@ -473,7 +478,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
             {isVideoMode && (
               <div
                 ref={lyricsVideoRef}
-                className="mx-3 mb-3 rounded-xl overflow-hidden aspect-video bg-black flex-shrink-0 flex items-center justify-center border border-[#1a1a1a]"
+                className="mx-3 md:mx-auto md:max-w-md md:w-full mb-3 rounded-xl overflow-hidden aspect-video bg-black flex-shrink-0 flex items-center justify-center border border-[#1a1a1a]"
               >
                 <Video size={24} className="text-white/25" />
               </div>
