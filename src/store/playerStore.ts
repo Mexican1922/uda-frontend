@@ -70,9 +70,25 @@ interface PlayerState {
   listenHere: () => void;                               // transfer playback to this device
   transferTo: (deviceId: string) => void;               // move playback to another device
 
+  // ── Endless radio ("never stop the music") ──
+  // When a station is playing we remember the genre-mates we can roll on to.
+  // When the queue runs dry we pull the next artist and keep playing instead
+  // of stopping. PlayerBar registers the actual fetch via registerRadioRefill.
+  endlessArtist: string | null;     // station seed (main artist)
+  endlessPool: string[];            // genre-mate names still to roll onto
+  endlessUsed: string[];            // names already pulled (no repeats)
+  endlessBusy: boolean;             // a refill is in flight
+  _radioRefill: ((artist: string) => Promise<Song[]>) | null;
+  registerRadioRefill: (fn: (artist: string) => Promise<Song[]>) => void;
+  _tryEndlessRefill: () => void;
+
   // Actions
   playSong: (song: Song, queue?: Song[]) => void;
   playQueue: (songs: Song[], startIndex?: number) => void;
+  // Queue a station/mix WITHOUT interrupting what's playing: if nothing is
+  // playing it starts; otherwise the songs are inserted right after the current
+  // track (above the existing up-next) so the music never stops.
+  queueMix: (songs: Song[], opts?: { endlessArtist?: string; endlessPool?: string[] }) => void;
   togglePlay: () => void;
   nextSong: () => void;
   prevSong: () => void;
@@ -111,6 +127,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   albumArtBounds: null,
   repeatMode: "off",
   isShuffled: false,
+
+  endlessArtist: null,
+  endlessPool: [],
+  endlessUsed: [],
+  endlessBusy: false,
+  _radioRefill: null,
+  registerRadioRefill: (fn) => set({ _radioRefill: fn }),
 
   toast: null,
   showToast: (msg) => {
@@ -210,6 +233,93 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
   },
 
+  queueMix: (songs, opts) => {
+    const { isRemote, _commandSink, queue, currentSong, currentIndex, showToast } = get();
+    // De-dupe against what's already queued.
+    const seen = new Set(queue.map((s) => s.youtube_id));
+    const fresh = songs.filter((s) => {
+      if (seen.has(s.youtube_id)) return false;
+      seen.add(s.youtube_id);
+      return true;
+    });
+
+    const endlessArtist = opts?.endlessArtist ?? null;
+    const endlessPool = opts?.endlessPool ?? [];
+
+    // Remote device owns audio — just hand it the station to play.
+    if (isRemote && _commandSink) {
+      if (fresh.length) _commandSink({ action: "playSong", song: fresh[0], queue: fresh });
+      return;
+    }
+
+    // Nothing playing yet → start the station now.
+    if (!currentSong) {
+      if (!fresh.length) return;
+      set({
+        queue: fresh,
+        currentIndex: 0,
+        currentSong: fresh[0],
+        isPlaying: true,
+        progress: 0,
+        currentTime: 0,
+        pendingSeek: null,
+        endlessArtist,
+        endlessPool,
+        endlessUsed: endlessArtist ? [endlessArtist] : [],
+      });
+      return;
+    }
+
+    if (!fresh.length) { showToast("Already in your queue"); return; }
+
+    // Insert right after the current track — above the existing up-next — so
+    // the current song keeps playing and the new mix flows straight after it.
+    const next = [
+      ...queue.slice(0, currentIndex + 1),
+      ...fresh,
+      ...queue.slice(currentIndex + 1),
+    ];
+    set({
+      queue: next,
+      // Adopt/refresh the station seed so "never stop" can roll on later.
+      endlessArtist: endlessArtist ?? get().endlessArtist,
+      endlessPool: endlessPool.length ? endlessPool : get().endlessPool,
+      endlessUsed: endlessArtist ? [endlessArtist] : get().endlessUsed,
+    });
+    showToast(`Added ${fresh.length} songs — playing after this`);
+  },
+
+  // Queue ran dry on a station → pull another genre-mate and keep playing.
+  _tryEndlessRefill: () => {
+    const { endlessArtist, endlessPool, endlessUsed, endlessBusy, _radioRefill } = get();
+    if (endlessBusy || !endlessArtist || !_radioRefill) return;
+    // Next genre-mate we haven't pulled yet; fall back to the seed artist.
+    const candidate = endlessPool.find((a) => !endlessUsed.includes(a)) || endlessArtist;
+    set({ endlessBusy: true });
+    _radioRefill(candidate)
+      .then((songs) => {
+        const cur = get();
+        const have = new Set(cur.queue.map((s) => s.youtube_id));
+        const add = (songs || []).filter((s) => !have.has(s.youtube_id));
+        if (!add.length) return;
+        const startAt = cur.queue.length;
+        const newQueue = [...cur.queue, ...add];
+        set({
+          queue: newQueue,
+          currentIndex: startAt,
+          currentSong: newQueue[startAt],
+          isPlaying: true,
+          progress: 0,
+          currentTime: 0,
+          pendingSeek: null,
+          endlessUsed: [...cur.endlessUsed, candidate],
+        });
+        get().showToast(`Radio rolling on — ${candidate}`);
+      })
+      .catch(() => {})
+      .finally(() => set({ endlessBusy: false }));
+  },
+
   togglePlay: () => {
     const { isRemote, _commandSink, isPlaying } = get();
     if (isRemote && _commandSink) {
@@ -240,7 +350,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } else if (repeatMode === "all") {
       next = 0;
     } else {
-      return; // End of queue
+      // End of queue — on an endless station, roll on to another artist
+      // instead of stopping. Otherwise we're genuinely done.
+      get()._tryEndlessRefill();
+      return;
     }
 
     set({
@@ -357,7 +470,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   clearQueue: () =>
-    set({ queue: [], currentSong: null, isPlaying: false, currentIndex: 0 }),
+    set({
+      queue: [], currentSong: null, isPlaying: false, currentIndex: 0,
+      endlessArtist: null, endlessPool: [], endlessUsed: [],
+    }),
 
   setNowPlayingOpen: (open) => set({ isNowPlayingOpen: open }),
   setAlbumArtBounds: (bounds) => set({ albumArtBounds: bounds }),

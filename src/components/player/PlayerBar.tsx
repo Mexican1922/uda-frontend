@@ -7,7 +7,8 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
-import { historyApi } from "../../services/api";
+import { historyApi, musicApi } from "../../services/api";
+import type { Song } from "../../types";
 import YouTubePlayer from "./YouTubePlayer";
 import NowPlayingScreen from "./NowPlayingScreen";
 import DevicePicker, { DeviceBanner } from "./DevicePicker";
@@ -23,6 +24,20 @@ export default function PlayerBar() {
 
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const playStartRef = useRef<number>(Date.now());
+  const registerRadioRefill = usePlayerStore((s) => s.registerRadioRefill);
+
+  // Endless radio: when a station's queue runs dry, fetch the next artist's
+  // tracks so playback rolls on instead of stopping. The store calls this.
+  useEffect(() => {
+    registerRadioRefill(async (artist: string): Promise<Song[]> => {
+      try {
+        const { data } = await musicApi.search(artist, 15);
+        return (data.results || []) as Song[];
+      } catch {
+        return [];
+      }
+    });
+  }, [registerRadioRefill]);
 
   // Media Session API
   useEffect(() => {

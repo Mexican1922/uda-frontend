@@ -64,7 +64,7 @@ function relatedArtists(name: string): string[] {
 export default function ArtistPage() {
   const { name: encodedName } = useParams<{ name: string }>();
   const navigate = useNavigate();
-  const { playSong } = usePlayerStore();
+  const { playSong, queueMix } = usePlayerStore();
   const showToast = usePlayerStore((s) => s.showToast);
   const isGuest = useAuthStore((s) => s.isGuest);
 
@@ -162,20 +162,25 @@ export default function ArtistPage() {
     if (songs.length > 0) playSong(songs[0], songs);
   };
 
+  // Mix = this artist's own songs + the tracks they're featured on, reshuffled
+  // every tap so it feels fresh; queued (not cleared) so nothing stops playing.
   const handleShuffle = () => {
     if (!songs.length) return;
     const shuffled = [...songs].sort(() => Math.random() - 0.5);
-    playSong(shuffled[0], shuffled);
+    queueMix(shuffled, { endlessArtist: artistName });
   };
 
-  // Blended mix: artist's tracks weighted heavily against similar artists.
+  // Radio = a genre station: this artist + same-genre artists, reshuffled each
+  // tap and set to roll on to another artist when it runs dry (never stops).
   const handleRadio = async () => {
     if (radioLoading) return;
     setRadioLoading(true);
     try {
       const { data } = await musicApi.artistRadio(artistName);
-      const mix: Song[] = data.results || [];
-      if (mix.length > 0) playSong(mix[0], mix);
+      const mix: Song[] = [...(data.results || [])].sort(() => Math.random() - 0.5);
+      if (mix.length > 0) {
+        queueMix(mix, { endlessArtist: artistName, endlessPool: data.related || [] });
+      }
     } catch {
       // Fall back to just shuffling the artist's own catalogue.
       handleShuffle();

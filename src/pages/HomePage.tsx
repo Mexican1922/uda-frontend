@@ -78,7 +78,7 @@ function artistGradient(name: string): [string, string] {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const { playSong } = usePlayerStore();
+  const { playSong, queueMix } = usePlayerStore();
   const showToast = usePlayerStore((s) => s.showToast);
   const user = useAuthStore((s) => s.user);
   const isGuest = useAuthStore((s) => s.isGuest);
@@ -309,11 +309,21 @@ export default function HomePage() {
     } catch {}
   };
 
+  // An Artist Mix is a genre station: this artist + same-genre artists, a new
+  // line-up each day, reshuffled on every tap, and set to roll on to another
+  // artist when it runs dry so it never stops.
   const handleArtistMixPlay = async (artist: string) => {
     try {
-      const { data } = await musicApi.search(artist, 15);
-      const results: Song[] = data.results || [];
-      if (results.length > 0) playSong(results[0], results);
+      const { data } = await musicApi.artistRadio(artist);
+      const mix: Song[] = [...(data.results || [])].sort(() => Math.random() - 0.5);
+      if (mix.length > 0) {
+        queueMix(mix, { endlessArtist: artist, endlessPool: data.related || [] });
+      } else {
+        // Fallback: the artist's own catalogue, shuffled.
+        const { data: s } = await musicApi.search(artist, 15);
+        const songs: Song[] = [...(s.results || [])].sort(() => Math.random() - 0.5);
+        if (songs.length > 0) queueMix(songs, { endlessArtist: artist });
+      }
     } catch {}
   };
 
