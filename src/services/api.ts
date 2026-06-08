@@ -85,6 +85,8 @@ export const musicApi = {
     api.get("/music/search/", { params: { q, limit } }),
   trending: () =>
     api.get("/music/trending/"),
+  charts: (country: string) =>
+    api.get("/music/charts/", { params: { country } }),
   mixes: () =>
     api.get("/music/mixes/"),
   albums: () =>
