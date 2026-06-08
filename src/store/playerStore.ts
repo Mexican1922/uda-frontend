@@ -3,6 +3,10 @@ import { persist } from "zustand/middleware";
 import type { Song, RepeatMode, SyncDevice, SyncCommand, RemoteSnapshot, PendingImport } from "../types";
 import { getDeviceInfo } from "../services/device";
 
+// How many resolved imported tracks to keep ready ahead of the current one, so
+// playback hands off smoothly without resolving the whole (quota-heavy) list.
+const PREFETCH_AHEAD = 3;
+
 interface AlbumArtBounds {
   top: number;
   left: number;
@@ -195,10 +199,14 @@ export const usePlayerStore = create<PlayerState>()(
     get()._prefetchImport();
   },
 
-  // Resolve the next pending import and append it to the queue (no play change).
+  // Resolve pending imports and append them, keeping ~PREFETCH_AHEAD resolved
+  // tracks ready ahead of the current one. Chains itself (one resolve at a time)
+  // until the buffer is full, then stops.
   _prefetchImport: () => {
-    const { pendingImports, importBusy, _resolveImport } = get();
+    const { pendingImports, importBusy, _resolveImport, queue, currentIndex } = get();
     if (importBusy || !pendingImports.length || !_resolveImport) return;
+    const ahead = queue.length - 1 - currentIndex;       // resolved songs after current
+    if (ahead >= PREFETCH_AHEAD) return;                  // buffer already full
     const [next, ...rest] = pendingImports;
     set({ importBusy: true });
     _resolveImport(next.importedTrackId)
@@ -210,8 +218,9 @@ export const usePlayerStore = create<PlayerState>()(
           pendingImports: rest,
           importBusy: false,
         });
+        get()._prefetchImport();   // keep filling toward the buffer target
       })
-      .catch(() => set({ pendingImports: rest, importBusy: false }));
+      .catch(() => { set({ pendingImports: rest, importBusy: false }); get()._prefetchImport(); });
   },
 
   // Resolve the next pending import and play it immediately (end-of-queue roll).
@@ -472,6 +481,8 @@ export const usePlayerStore = create<PlayerState>()(
       currentTime: 0,
       pendingSeek: null,
     });
+    // Keep the import buffer topped up as we move through the queue.
+    if (get().pendingImports.length) get()._prefetchImport();
   },
 
   prevSong: () => {
