@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Play, Music2, Heart } from "lucide-react";
-import { libraryApi } from "../services/api";
+import { libraryApi, spotifyApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import { useAuthStore } from "../store/authStore";
-import type { Playlist, SavedSong, Song } from "../types";
+import type { Playlist, SavedSong, Song, ImportedPlaylist } from "../types";
 import SongRow from "../components/ui/SongRow";
 import GuestPrompt from "../components/ui/GuestPrompt";
 import SpotifyPanel from "../components/library/SpotifyPanel";
@@ -15,6 +15,11 @@ export default function LibraryPage() {
   const [tab, setTab] = useState<Tab>("songs");
   const [savedSongs, setSavedSongs] = useState<SavedSong[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  // Spotify-imported playlists surfaced alongside the real ones.
+  const [spotifyPlaylists, setSpotifyPlaylists] = useState<ImportedPlaylist[]>([]);
+  const [spotifyLikedCount, setSpotifyLikedCount] = useState(0);
+  // When set, the Spotify tab opens straight to this imported playlist.
+  const [spotifyOpenId, setSpotifyOpenId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newName, setNewName] = useState("");
@@ -40,7 +45,13 @@ export default function LibraryPage() {
       }
     };
     load();
+    // Imported Spotify playlists + liked count — shown in the Playlists tab.
+    // Non-blocking and best-effort (Spotify may not be set up).
+    spotifyApi.playlists().then(({ data }) => setSpotifyPlaylists(data)).catch(() => {});
+    spotifyApi.status().then(({ data }) => setSpotifyLikedCount(data.liked_count ?? 0)).catch(() => {});
   }, [isGuest]);
+
+  const openImported = (id: number | null) => { setSpotifyOpenId(id); setTab("spotify"); };
 
   const handleUnsave = async (song: Song) => {
     try {
@@ -135,7 +146,7 @@ export default function LibraryPage() {
 
       {/* Content */}
       {tab === "spotify" ? (
-        <SpotifyPanel />
+        <SpotifyPanel initialPlaylistId={spotifyOpenId} />
       ) : loading ? (
         <LoadingSkeleton />
       ) : tab === "songs" ? (
@@ -161,13 +172,28 @@ export default function LibraryPage() {
             desc="Songs you save will appear here"
           />
         )
-      ) : playlists.length > 0 ? (
+      ) : (playlists.length > 0 || spotifyPlaylists.length > 0 || spotifyLikedCount > 0) ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
           {playlists.map((pl) => (
             <PlaylistCard
               key={pl.id}
               playlist={pl}
               onClick={() => navigate(`/playlist/${pl.id}`)}
+            />
+          ))}
+          {spotifyLikedCount > 0 && (
+            <ImportedCard
+              name="Liked from Spotify"
+              subtitle={`${spotifyLikedCount} songs`}
+              onClick={() => openImported(null)}
+            />
+          )}
+          {spotifyPlaylists.map((pl) => (
+            <ImportedCard
+              key={`sp-${pl.id}`}
+              name={pl.name}
+              subtitle={`${pl.track_count} songs`}
+              onClick={() => openImported(pl.id)}
             />
           ))}
         </div>
@@ -351,6 +377,39 @@ function PlaylistCard({
       <p className="text-xs text-[#605850] mt-0.5">
         {playlist.song_count} {playlist.song_count === 1 ? "song" : "songs"}
       </p>
+    </div>
+  );
+}
+
+/** Card for a Spotify-imported playlist (or Liked) shown in the Playlists grid. */
+function ImportedCard({
+  name,
+  subtitle,
+  onClick,
+}: {
+  name: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
+  const [a, b] = plGradient(name);
+  return (
+    <div onClick={onClick} className="cursor-pointer group">
+      <div className="relative w-full aspect-square rounded-xl overflow-hidden mb-2.5 transition-transform duration-200 group-hover:scale-[1.03]"
+           style={{ background: `linear-gradient(135deg, ${a}, ${b})` }}>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+          <span className="font-extrabold leading-none" style={{ fontFamily: "Syne, sans-serif", fontSize: 52, color: "rgba(255,255,255,0.22)", letterSpacing: "-0.04em" }}>
+            {plInitials(name)}
+          </span>
+        </div>
+        {/* Spotify origin badge */}
+        <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center" title="Imported from Spotify">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="#1DB954" aria-hidden>
+            <path d="M12 0a12 12 0 1 0 0 24 12 12 0 0 0 0-24zm5.5 17.3a.75.75 0 0 1-1.03.25c-2.82-1.72-6.36-2.11-10.54-1.16a.75.75 0 1 1-.33-1.46c4.57-1.04 8.49-.59 11.65 1.34.35.21.46.67.25 1.03zm1.47-3.27a.94.94 0 0 1-1.29.31c-3.23-1.99-8.15-2.56-11.97-1.4a.94.94 0 1 1-.54-1.8c4.37-1.32 9.79-.68 13.49 1.6.44.27.58.85.31 1.29zm.13-3.4C15.21 8.23 8.85 8.02 5.2 9.13a1.12 1.12 0 1 1-.65-2.15c4.2-1.27 11.2-1.03 15.6 1.58a1.12 1.12 0 1 1-1.15 1.92z" />
+          </svg>
+        </span>
+      </div>
+      <p className="text-sm font-medium text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{name}</p>
+      <p className="text-xs text-[#605850] mt-0.5">{subtitle}</p>
     </div>
   );
 }
