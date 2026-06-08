@@ -67,6 +67,16 @@ export const authApi = {
   // Google OAuth
   googleAuth: (access_token: string) =>
     api.post("/auth/google/", { access_token }),
+  // Password reset (logged out)
+  requestPasswordReset: (email: string) =>
+    api.post("/auth/password-reset/", { email }),
+  confirmPasswordReset: (uid: string, token: string, password: string) =>
+    api.post("/auth/password-reset/confirm/", { uid, token, password }),
+  // Account management (logged in)
+  changePassword: (old_password: string, new_password: string) =>
+    api.post("/auth/change-password/", { old_password, new_password }),
+  deleteAccount: (password: string) =>
+    api.post("/auth/delete-account/", { password }),
 };
 
 // ── Music ─────────────────────────────────────────────

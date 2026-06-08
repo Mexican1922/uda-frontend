@@ -6,6 +6,7 @@ import { usePlayerStore } from "../store/playerStore";
 import type { Song } from "../types";
 import SongRow from "../components/ui/SongRow";
 import GuestPrompt from "../components/ui/GuestPrompt";
+import AccountSecurity from "../components/account/AccountSecurity";
 import { UserRound } from "lucide-react";
 import { clientCache, TTL } from "../services/cache";
 import { usePWAInstall } from "../hooks/usePWAInstall";
@@ -257,6 +258,9 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* ── Security: change password / delete account ────────────────────── */}
+      <AccountSecurity />
 
       {/* ── Logout button ─────────────────────────────────────────────────── */}
       <div className="px-4 md:px-8 mt-6">
