@@ -7,6 +7,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
+import { useAuthStore } from "../../store/authStore";
 import { historyApi, musicApi } from "../../services/api";
 import type { Song } from "../../types";
 import YouTubePlayer from "./YouTubePlayer";
@@ -25,7 +26,6 @@ export default function PlayerBar() {
   const showToast = usePlayerStore((s) => s.showToast);
 
   const [showNowPlaying, setShowNowPlaying] = useState(false);
-  const playStartRef = useRef<number>(Date.now());
   const registerRadioRefill = usePlayerStore((s) => s.registerRadioRefill);
 
   // Hands-free voice control — same toggle as Now Playing, surfaced here so it's
@@ -54,37 +54,60 @@ export default function PlayerBar() {
     });
   }, [registerRadioRefill]);
 
-  // Media Session API
-  useEffect(() => {
-    if (!currentSong || !("mediaSession" in navigator)) return;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: currentSong.title,
-      artist: currentSong.artist,
-      artwork: [{ src: currentSong.thumbnail_url, sizes: "512x512", type: "image/jpeg" }],
-    });
-    navigator.mediaSession.setActionHandler("play", togglePlay);
-    navigator.mediaSession.setActionHandler("pause", togglePlay);
-    navigator.mediaSession.setActionHandler("nexttrack", nextSong);
-    navigator.mediaSession.setActionHandler("previoustrack", prevSong);
-  }, [currentSong]);
+  // Media Session (lock-screen controls) is owned by useMediaSession() inside
+  // YouTubePlayer — intentionally NOT duplicated here (the old copy bound both
+  // play & pause to togglePlay, which desynced OS controls).
 
-  // Log play history on song change
+  // ── Play-history logging ───────────────────────────────────────────────────
+  // One record per song. This handles three things the old version got wrong:
+  //  • guests have no account → never POST (was spamming 401s)
+  //  • a tab close/refresh never runs React cleanup → also flush on pagehide
+  //  • don't double-log when both a pagehide and a song change fire
+  const songRef   = useRef<Song | null>(currentSong);
+  const startRef  = useRef<number>(Date.now());
+  const loggedRef = useRef(false);
+
+  // Kept in a ref so the once-registered pagehide listener always calls the
+  // latest version without re-binding on every render.
+  const flushPlay = useRef(() => {});
+  flushPlay.current = () => {
+    const song = songRef.current;
+    if (!song || loggedRef.current) return;
+    if (useAuthStore.getState().isGuest) return;          // browse-only: nothing to log
+    const playedSeconds = Math.floor((Date.now() - startRef.current) / 1000);
+    if (playedSeconds < 1) return;                          // ignore instant skips
+    loggedRef.current = true;
+    historyApi.logPlay({
+      youtube_id: song.youtube_id,
+      title: song.title,
+      artist: song.artist,
+      thumbnail_url: song.thumbnail_url,
+      completed: playedSeconds >= song.duration_seconds * 0.8,
+      play_duration_seconds: playedSeconds,
+    }).catch(() => {});
+  };
+
+  // On song change (and unmount): the cleanup logs the song that just ended,
+  // then we arm the timer for the new one.
   useEffect(() => {
-    playStartRef.current = Date.now();
-    return () => {
-      if (currentSong) {
-        const playedSeconds = Math.floor((Date.now() - playStartRef.current) / 1000);
-        historyApi.logPlay({
-          youtube_id: currentSong.youtube_id,
-          title: currentSong.title,
-          artist: currentSong.artist,
-          thumbnail_url: currentSong.thumbnail_url,
-          completed: playedSeconds >= currentSong.duration_seconds * 0.8,
-          play_duration_seconds: playedSeconds,
-        }).catch(() => {});
-      }
-    };
+    songRef.current   = currentSong;
+    startRef.current  = Date.now();
+    loggedRef.current = false;
+    return () => { flushPlay.current(); };
   }, [currentSong?.youtube_id]);
+
+  // Tab close / backgrounding / refresh never runs the cleanup above — catch
+  // those exits here so the final (often most important) play is still logged.
+  useEffect(() => {
+    const flush = () => flushPlay.current();
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!duration) return;

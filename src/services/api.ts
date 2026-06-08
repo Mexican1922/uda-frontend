@@ -105,6 +105,10 @@ export const libraryApi = {
     api.delete(`/library/favourite-artists/${encodeURIComponent(name)}/`),
 
   getPlaylists: () => api.get("/library/playlists/"),
+  // IDs of the user's playlists that already contain a song (one query) — lets
+  // the add-to-playlist sheet show ticks without opening every playlist.
+  playlistsContaining: (youtube_id: string) =>
+    api.get("/library/playlists/containing/", { params: { youtube_id } }),
   createPlaylist: (data: { name: string; description?: string }) =>
     api.post("/library/playlists/", data),
   getPlaylist: (id: number) =>

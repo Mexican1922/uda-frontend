@@ -34,30 +34,14 @@ function fakeListeners(name: string): string {
   return `${m}M`;
 }
 
-// Genre tag based on hash
-const GENRE_TAGS = ["Afrobeats", "Afropop", "Amapiano", "Afro-soul", "Afro-fusion", "Highlife", "Alté"];
-function fakeGenre(name: string): string {
-  let h = 3;
-  for (const c of name) h = (h * 13 + c.charCodeAt(0)) >>> 0;
-  return GENRE_TAGS[h % GENRE_TAGS.length];
-}
+// Genre is no longer guessed client-side — the backend returns a real scene
+// label (Claude + curated fallback). A hashed tag would mislabel foreign artists
+// as an African genre, so when the backend gives nothing we hide the chip.
 
-// Related artists: pick 6 from a pool, excluding the current artist
-const ARTIST_POOL = [
-  "Burna Boy","Wizkid","Davido","Asake","Rema","Tems","Omah Lay",
-  "Fireboy DML","Adekunle Gold","Tiwa Savage","Kizz Daniel","Olamide",
-  "Simi","Flavour","Phyno","Ycee","Wande Coal","Mr Eazi",
-];
-function relatedArtists(name: string): string[] {
-  const pool = ARTIST_POOL.filter((a) => a.toLowerCase() !== name.toLowerCase());
-  let h = 5;
-  for (const c of name) h = (h * 11 + c.charCodeAt(0)) >>> 0;
-  const result: string[] = [];
-  for (let i = 0; i < 6; i++) {
-    result.push(pool[(h + i * 3) % pool.length]);
-  }
-  return [...new Set(result)].slice(0, 6);
-}
+// Related artists come from the backend (genre/scene-correct, via Claude with a
+// curated fallback). We intentionally have NO client-side artist pool: guessing
+// here would re-introduce the bug where a foreign artist (e.g. Gunna) shows
+// Afrobeats peers. When the backend has none, we simply hide "Fans also like".
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -70,11 +54,11 @@ export default function ArtistPage() {
 
   const artistName = decodeURIComponent(encodedName || "");
   const [from, to] = artistGradient(artistName);
-  const genre = fakeGenre(artistName);
   const listeners = fakeListeners(artistName);
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [related, setRelated] = useState<string[]>([]);
+  const [genre, setGenre] = useState("");
   const [albums, setAlbums] = useState<Album[]>([]);
   const [albumsLoading, setAlbumsLoading] = useState(true);
   const [showAllSongs, setShowAllSongs] = useState(false);
@@ -90,6 +74,7 @@ export default function ArtistPage() {
     setLoading(true);
     setSongs([]);
     setRelated([]);
+    setGenre("");
     setShowAllSongs(false);
     setHeroImage("");
     musicApi
@@ -99,15 +84,12 @@ export default function ArtistPage() {
         // Prefer the channel banner (wide) then avatar; gradient+initials below
         // remain the fallback until YouTube returns an image.
         setHeroImage(data.banner_url || data.image_url || "");
-        // Backend related artists are genre-correct; fall back to the local pool
-        // only when the LLM call returned nothing (e.g. no Anthropic credit).
-        setRelated(
-          (data.related && data.related.length > 0)
-            ? data.related
-            : relatedArtists(artistName)
-        );
+        // Backend related artists are genre/scene-correct. If it returns none,
+        // show none — never substitute a guessed (Afrobeats) list.
+        setRelated(data.related || []);
+        setGenre(data.genre || "");
       })
-      .catch(() => setRelated(relatedArtists(artistName)))
+      .catch(() => { setRelated([]); setGenre(""); })
       .finally(() => setLoading(false));
   }, [artistName]);
 
@@ -242,8 +224,12 @@ export default function ArtistPage() {
             {artistName}
           </h1>
           <div className="flex items-center gap-2.5 mt-1.5">
-            <span className="text-[11px] text-white/65 font-semibold tracking-[0.06em]">{genre}</span>
-            <span className="w-1 h-1 rounded-full bg-white/30" />
+            {genre && (
+              <>
+                <span className="text-[11px] text-white/65 font-semibold tracking-[0.06em]">{genre}</span>
+                <span className="w-1 h-1 rounded-full bg-white/30" />
+              </>
+            )}
             <span className="text-[11px] text-white/65 font-semibold">{listeners} monthly listeners</span>
           </div>
         </div>
@@ -432,7 +418,7 @@ export default function ArtistPage() {
       )}
 
       {/* ── Related artists ───────────────────────────────────────────────── */}
-      {!loading && (
+      {!loading && related.length > 0 && (
         <div className="mt-8">
           <div className="px-4 mb-3">
             <h2

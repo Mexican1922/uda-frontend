@@ -17,9 +17,10 @@ function addRecentSearch(q: string) {
 function removeRecentSearch(q: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(getRecentSearches().filter((s) => s !== q)));
 }
-import { musicApi, recommendationsApi, libraryApi } from "../services/api";
+import { musicApi, recommendationsApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import { useAuthStore } from "../store/authStore";
+import { useSavedSongs } from "../hooks/useSavedSongs";
 import type { Song } from "../types";
 import SongRow from "../components/ui/SongRow";
 import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
@@ -54,6 +55,7 @@ export default function SearchPage() {
   const { playSong } = usePlayerStore();
   const showToast = usePlayerStore((s) => s.showToast);
   const isGuest = useAuthStore((s) => s.isGuest);
+  const { savedIds, toggleSave } = useSavedSongs();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<AnySpeechRecognition>(null);
@@ -100,18 +102,6 @@ export default function SearchPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     runSearch(query, isNL);
-  };
-
-  const handleSave = async (song: Song) => {
-    if (isGuest) { showToast("Sign in to save songs"); return; }
-    try {
-      await libraryApi.saveSong({
-        youtube_id: song.youtube_id,
-        title: song.title,
-        artist: song.artist,
-        thumbnail_url: song.thumbnail_url,
-      });
-    } catch {}
   };
 
   const startVoice = () => {
@@ -322,8 +312,8 @@ export default function SearchPage() {
               index={i}
               queue={results}
               onPlay={playSong}
-              onAction={handleSave}
-              actionIcon={<HeartIcon />}
+              onAction={toggleSave}
+              actionIcon={savedIds.has(song.youtube_id) ? <HeartFilledIcon /> : <HeartIcon />}
               onSecondAction={(s) => isGuest ? showToast("Sign in to build playlists") : setPlaylistSong(s)}
               secondActionIcon={<PlaylistAddIcon />}
               onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
@@ -451,6 +441,16 @@ export default function SearchPage() {
 function HeartIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
+// Saved state — gold filled heart (explicit colour so it reads as "saved"
+// regardless of the row's hover colour).
+function HeartFilledIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="#e8c97a" stroke="none">
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
   );

@@ -53,10 +53,14 @@ export default function YouTubePlayer() {
         return;
       }
 
+      // On a restored session the store rehydrates PAUSED — don't autoplay; the
+      // user resumes via the "Continue listening" prompt. autoplay/playVideo are
+      // gated on the live isPlaying flag so a fresh play still starts instantly.
+      const shouldPlay = usePlayerStore.getState().isPlaying;
       playerRef.current = new window.YT.Player("uda-yt-player", {
         videoId: currentSong.youtube_id,
         playerVars: {
-          autoplay: 1,
+          autoplay: shouldPlay ? 1 : 0,
           controls: 0,
           disablekb: 1,
           modestbranding: 1,
@@ -70,7 +74,7 @@ export default function YouTubePlayer() {
             isReadyRef.current = true;
             lastSongRef.current = currentSong.youtube_id;
             e.target.setVolume(isMuted ? 0 : volume);
-            e.target.playVideo();
+            if (usePlayerStore.getState().isPlaying) e.target.playVideo();
             setDuration(e.target.getDuration());
           },
           onStateChange: (e: any) => {

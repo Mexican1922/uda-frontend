@@ -58,6 +58,10 @@ export default function App() {
         <Route path="artist/:name"    element={<ArtistPage />} />
         <Route path="album/:playlistId" element={<AlbumPage />} />
       </Route>
+
+      {/* Unknown URL → home (instead of a blank screen). The SPA rewrite serves
+          index.html for any path, so without this an unmatched route renders nothing. */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
