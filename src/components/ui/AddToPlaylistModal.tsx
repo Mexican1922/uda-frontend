@@ -22,31 +22,18 @@ export default function AddToPlaylistModal({ song, onClose }: Props) {
 
     const load = async () => {
       try {
-        const { data } = await libraryApi.getPlaylists();
+        // Two parallel calls total (was 1 + N): the playlist list, and a single
+        // membership lookup for which of them already contain this song.
+        const [{ data }, containing] = await Promise.all([
+          libraryApi.getPlaylists(),
+          libraryApi
+            .playlistsContaining(song.youtube_id)
+            .then((r) => r.data.playlist_ids as number[])
+            .catch(() => [] as number[]),
+        ]);
         if (cancelled) return;
         setPlaylists(data);
-
-        // Pre-check which playlists already contain this song
-        const checks = await Promise.all(
-          (data as Playlist[]).map(async (pl) => {
-            try {
-              const { data: detail } = await libraryApi.getPlaylist(pl.id);
-              const hasSong = (detail.tracks ?? []).some(
-                (t: any) => t.song?.youtube_id === song.youtube_id
-              );
-              return hasSong ? pl.id : null;
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        if (!cancelled) {
-          const alreadyIn = new Set<number>(
-            checks.filter((id): id is number => id !== null)
-          );
-          setInPlaylist(alreadyIn);
-        }
+        setInPlaylist(new Set<number>(containing));
       } catch {
         // ignore
       } finally {

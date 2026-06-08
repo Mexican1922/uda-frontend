@@ -11,6 +11,7 @@ import {
 } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import { useAuthStore } from "../store/authStore";
+import { useSavedSongs } from "../hooks/useSavedSongs";
 import type { Song, Album } from "../types";
 import SongRow  from "../components/ui/SongRow";
 import SongCard from "../components/ui/SongCard";
@@ -82,6 +83,7 @@ export default function HomePage() {
   const showToast = usePlayerStore((s) => s.showToast);
   const user = useAuthStore((s) => s.user);
   const isGuest = useAuthStore((s) => s.isGuest);
+  const { savedIds, toggleSave } = useSavedSongs();
   const navigate = useNavigate();
 
   // Recently played
@@ -297,18 +299,6 @@ export default function HomePage() {
     setActiveMood(value);
   };
 
-  const handleSave = async (song: Song) => {
-    if (isGuest) { showToast("Sign in to save songs"); return; }
-    try {
-      await libraryApi.saveSong({
-        youtube_id:    song.youtube_id,
-        title:         song.title,
-        artist:        song.artist,
-        thumbnail_url: song.thumbnail_url,
-      });
-    } catch {}
-  };
-
   // An Artist Mix is a genre station: this artist + same-genre artists, a new
   // line-up each day, reshuffled on every tap, and set to roll on to another
   // artist when it runs dry so it never stops.
@@ -489,8 +479,8 @@ export default function HomePage() {
                 index={i}
                 queue={recommendations}
                 onPlay={playSong}
-                onAction={handleSave}
-                actionIcon={<HeartIcon />}
+                onAction={toggleSave}
+                actionIcon={savedIds.has(song.youtube_id) ? <HeartFilledIcon /> : <HeartIcon />}
                 onSecondAction={(s) => isGuest ? showToast("Sign in to build playlists") : setPlaylistSong(s)}
                 secondActionIcon={<PlaylistAddIcon />}
                 onArtistClick={(artist) => navigate(`/artist/${encodeURIComponent(artist)}`)}
@@ -780,6 +770,15 @@ function SectionEmpty({ message }: { message: string }) {
 function HeartIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
+// Saved — gold filled heart.
+function HeartFilledIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="#e8c97a" stroke="none">
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
   );

@@ -95,6 +95,18 @@ export function useDeviceSync() {
       });
     };
 
+    // Lightweight heartbeat: only the progress fields change second-to-second,
+    // so we avoid re-sending the whole queue every 2s (Supabase bandwidth) — the
+    // full snapshot still fires on real changes (song/queue/index) and on join.
+    const broadcastTick = () => {
+      const s = usePlayerStore.getState();
+      channel.send({
+        type: "broadcast",
+        event: "tick",
+        payload: { currentTime: s.currentTime, duration: s.duration, isPlaying: s.isPlaying },
+      });
+    };
+
     // ── Presence → resolve who is the active device ──────────────────────
     const recomputeRole = () => {
       const state = channel.presenceState<SyncDevice>();
@@ -115,14 +127,33 @@ export function useDeviceSync() {
       if (isRemote && presenceRef.current.isActive) relinquish();
     };
 
+    // When a new device joins, the active device resends the full snapshot so
+    // the newcomer gets the queue immediately (the heartbeat only carries
+    // progress now, so we can't rely on it to deliver full state).
+    const onJoin = () => {
+      recomputeRole();
+      if (roleRef.current.activeId === myId) broadcastSnapshot();
+    };
+
     channel
       .on("presence", { event: "sync" }, recomputeRole)
-      .on("presence", { event: "join" }, recomputeRole)
+      .on("presence", { event: "join" }, onJoin)
       .on("presence", { event: "leave" }, recomputeRole)
-      // Remote receives the active device's playback state.
+      // Remote receives the active device's full playback state.
       .on("broadcast", { event: "state" }, ({ payload }) => {
         if (roleRef.current.activeId === myId) return; // ignore if I'm active
         usePlayerStore.getState().applyRemoteSnapshot(payload as RemoteSnapshot);
+      })
+      // Remote receives lightweight progress ticks between full snapshots.
+      .on("broadcast", { event: "tick" }, ({ payload }) => {
+        if (roleRef.current.activeId === myId) return;
+        const t = payload as { currentTime: number; duration: number; isPlaying: boolean };
+        usePlayerStore.setState({
+          currentTime: t.currentTime,
+          duration: t.duration,
+          isPlaying: t.isPlaying,
+          progress: t.duration > 0 ? (t.currentTime / t.duration) * 100 : 0,
+        });
       })
       // Active device receives control commands from a remote.
       .on("broadcast", { event: "command" }, ({ payload }) => {
@@ -197,10 +228,10 @@ export function useDeviceSync() {
       }
     });
 
-    // Heartbeat — carries currentTime/progress to remotes while playing.
+    // Heartbeat — carries only currentTime/progress to remotes while playing.
     const heartbeat = setInterval(() => {
       if (roleRef.current.activeId === myId && usePlayerStore.getState().isPlaying) {
-        broadcastSnapshot();
+        broadcastTick();
       }
     }, HEARTBEAT_MS);
 

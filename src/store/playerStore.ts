@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { Song, RepeatMode, SyncDevice, SyncCommand, RemoteSnapshot } from "../types";
 import { getDeviceInfo } from "../services/device";
 
@@ -111,7 +112,9 @@ interface PlayerState {
   setAlbumArtBounds: (bounds: AlbumArtBounds | null) => void;
 }
 
-export const usePlayerStore = create<PlayerState>((set, get) => ({
+export const usePlayerStore = create<PlayerState>()(
+  persist(
+    (set, get) => ({
   queue: [],
   currentIndex: 0,
   currentSong: null,
@@ -477,4 +480,33 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setNowPlayingOpen: (open) => set({ isNowPlayingOpen: open }),
   setAlbumArtBounds: (bounds) => set({ albumArtBounds: bounds }),
-}));
+}),
+    {
+      name: "uda-player",
+      // Only persist what's needed to resume a session. We deliberately exclude
+      // isPlaying (always resume PAUSED — never auto-start), live sync state and
+      // all functions/sinks (not serializable), and transient UI/playback fields.
+      partialize: (s) => ({
+        queue: s.queue,
+        currentIndex: s.currentIndex,
+        currentSong: s.currentSong,
+        currentTime: s.currentTime,
+        repeatMode: s.repeatMode,
+        isShuffled: s.isShuffled,
+        volume: s.volume,
+        isMuted: s.isMuted,
+        endlessArtist: s.endlessArtist,
+        endlessPool: s.endlessPool,
+        endlessUsed: s.endlessUsed,
+      }),
+      // After restoring, force a stopped state: never resume mid-air on load.
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.isPlaying = false;
+          state.pendingSeek = null;
+          state.progress = state.duration > 0 ? (state.currentTime / state.duration) * 100 : 0;
+        }
+      },
+    }
+  )
+);

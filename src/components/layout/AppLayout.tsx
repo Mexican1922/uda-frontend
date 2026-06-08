@@ -3,6 +3,7 @@ import TopBar from "./TopBar";
 import BottomNav from "./BottomNav";
 import Sidebar from "./Sidebar";
 import PlayerBar from "../player/PlayerBar";
+import ResumeBanner from "../player/ResumeBanner";
 import { usePlayerStore } from "../../store/playerStore";
 import { useDeviceSync } from "../../hooks/useDeviceSync";
 import { useVoiceControl } from "../../hooks/useVoiceControl";
@@ -41,6 +42,9 @@ export default function AppLayout() {
       <TopBar />
       {currentSong && <PlayerBar />}
       <BottomNav />
+
+      {/* "Continue listening" — offer to resume a restored session (never auto-plays) */}
+      <ResumeBanner />
 
       {/* Toast notification (e.g. "video unavailable, skipped") */}
       {toast && (
