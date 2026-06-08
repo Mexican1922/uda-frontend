@@ -1,8 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { ChevronLeft, Loader2, Play, RefreshCw, Music2, Link2Off, Upload } from "lucide-react";
+import { ChevronLeft, Loader2, Play, RefreshCw, Music2, Link2Off, Upload, ListEnd } from "lucide-react";
 import { spotifyApi } from "../../services/api";
 import { usePlayerStore } from "../../store/playerStore";
-import type { Song, ImportedTrack, ImportedPlaylist, SpotifyStatus } from "../../types";
+import type { ImportedTrack, ImportedPlaylist, SpotifyStatus, PendingImport } from "../../types";
+
+const toPending = (t: ImportedTrack): PendingImport => ({
+  importedTrackId: t.id,
+  title: t.title,
+  artist: t.artist,
+  thumbnail_url: t.image_url,
+});
 
 const SPOTIFY_GREEN = "#1DB954";
 
@@ -14,50 +21,85 @@ function SpotifyGlyph({ size = 18 }: { size?: number }) {
   );
 }
 
-/** Compact row for a not-yet-resolved imported track. */
+/** Compact row for an imported track: tap to play the list from here, or
+ * add just this track to the queue. */
 function TrackRow({
-  track, onPlay, busy,
-}: { track: ImportedTrack; onPlay: (t: ImportedTrack) => void; busy: boolean }) {
+  track, onPlay, onQueue, busy,
+}: { track: ImportedTrack; onPlay: () => void; onQueue: () => void; busy: boolean }) {
   const unavailable = track.status === "unavailable";
   return (
-    <button
-      onClick={() => !unavailable && onPlay(track)}
-      disabled={unavailable || busy}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
-        unavailable ? "opacity-40 cursor-default" : "hover:bg-white/[0.04]"
+    <div
+      className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+        unavailable ? "opacity-40" : "hover:bg-white/[0.04]"
       }`}
     >
-      <div className="relative w-11 h-11 flex-shrink-0">
-        {track.image_url ? (
-          <img src={track.image_url} alt={track.title} className="w-full h-full rounded-lg object-cover" />
-        ) : (
-          <div className="w-full h-full rounded-lg bg-[#1a1a1a] flex items-center justify-center">
-            <Music2 size={16} className="text-[#3a3a3a]" />
-          </div>
-        )}
-        {busy && (
-          <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
-            <Loader2 size={16} className="animate-spin text-white" />
-          </span>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>
-          {track.title}
-        </p>
-        <p className="text-xs text-[#605850] truncate mt-0.5">
-          {track.artist}{unavailable ? " · no match" : ""}
-        </p>
-      </div>
-      {!unavailable && !busy && (
-        <Play size={14} className="text-[#605850] flex-shrink-0" fill="currentColor" />
+      <button
+        onClick={() => !unavailable && onPlay()}
+        disabled={unavailable || busy}
+        className="flex items-center gap-3 flex-1 min-w-0 text-left"
+      >
+        <div className="relative w-11 h-11 flex-shrink-0">
+          {track.image_url ? (
+            <img src={track.image_url} alt={track.title} className="w-full h-full rounded-lg object-cover" />
+          ) : (
+            <div className="w-full h-full rounded-lg bg-[#1a1a1a] flex items-center justify-center">
+              <Music2 size={16} className="text-[#3a3a3a]" />
+            </div>
+          )}
+          {busy && (
+            <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+              <Loader2 size={16} className="animate-spin text-white" />
+            </span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>
+            {track.title}
+          </p>
+          <p className="text-xs text-[#605850] truncate mt-0.5">
+            {track.artist}{unavailable ? " · no match" : ""}
+          </p>
+        </div>
+      </button>
+      {!unavailable && (
+        <button
+          onClick={onQueue}
+          title="Add to queue"
+          className="flex-shrink-0 p-1.5 text-[#605850] hover:text-[#e8c97a] active:scale-90 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        >
+          <ListEnd size={15} />
+        </button>
       )}
-    </button>
+    </div>
   );
 }
 
-export default function SpotifyPanel() {
-  const playSong = usePlayerStore((s) => s.playSong);
+/** "Play" + "Add to queue" buttons for a whole imported list. */
+function ListActions({ onPlay, onQueue }: { onPlay: () => void; onQueue: () => void }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <button
+        onClick={onPlay}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-[#080808]"
+        style={{ background: "linear-gradient(180deg,#e8c97a,#c9a84c)", fontFamily: "Syne, sans-serif" }}
+      >
+        <Play size={12} fill="currentColor" /> Play
+      </button>
+      <button
+        onClick={onQueue}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold text-[#b8b0a0] border border-[#2a2a2a] hover:text-[#e8c97a] transition-colors"
+        style={{ fontFamily: "Syne, sans-serif" }}
+      >
+        <ListEnd size={13} /> Add to queue
+      </button>
+    </div>
+  );
+}
+
+export default function SpotifyPanel({ initialPlaylistId }: { initialPlaylistId?: number | null } = {}) {
+  const playImports = usePlayerStore((s) => s.playImports);
+  const queueImports = usePlayerStore((s) => s.queueImports);
+  const importBusy = usePlayerStore((s) => s.importBusy);
   const showToast = usePlayerStore((s) => s.showToast);
 
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
@@ -170,33 +212,25 @@ export default function SpotifyPanel() {
     } catch { showToast("Couldn't open that playlist"); }
   };
 
-  // Lazy resolve → play. First play of a track spends one YouTube search;
-  // afterwards the match is cached and instant.
-  const playImported = async (track: ImportedTrack) => {
-    if (resolvingId) return;
-    setResolvingId(track.id);
-    try {
-      const { data } = await spotifyApi.resolve(track.id);
-      playSong(data as Song, [data as Song]);
-      const patch = (arr: ImportedTrack[]) =>
-        arr.map((t) => t.id === track.id ? { ...t, youtube_id: data.youtube_id, status: "matched" as const } : t);
-      setLiked(patch); setPlTracks(patch);
-    } catch (e: any) {
-      const code = e?.response?.data?.code;
-      if (code === "no_match") {
-        const mark = (arr: ImportedTrack[]) =>
-          arr.map((t) => t.id === track.id ? { ...t, status: "unavailable" as const } : t);
-        setLiked(mark); setPlTracks(mark);
-        showToast("No YouTube match for this song");
-      } else {
-        showToast(code === "quota_exceeded"
-          ? "Daily match limit reached — try again tomorrow"
-          : "Couldn't play that — try again");
-      }
-    } finally {
-      setResolvingId(null);
-    }
+  // Clear the per-row spinner once the store finishes resolving the first track.
+  useEffect(() => { if (!importBusy) setResolvingId(null); }, [importBusy]);
+
+  // Deep-link: open a specific imported playlist (from the Playlists tab card).
+  useEffect(() => {
+    if (initialPlaylistId == null || !playlists.length) return;
+    const pl = playlists.find((p) => p.id === initialPlaylistId);
+    if (pl) openPlaylist(pl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPlaylistId, playlists]);
+
+  // Play a whole imported list as a queue, starting at `index`. The store
+  // resolves the first track now and the rest lazily as they're reached.
+  const playList = (tracks: ImportedTrack[], index: number) => {
+    setResolvingId(tracks[index].id);
+    playImports(tracks.map(toPending), index);
   };
+  const queueList = (tracks: ImportedTrack[]) => queueImports(tracks.map(toPending));
+  const queueOne = (track: ImportedTrack) => queueImports([toPending(track)]);
 
   if (loading) {
     return (
@@ -219,9 +253,15 @@ export default function SpotifyPanel() {
         <h3 className="text-base font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
           {openPl.name}
         </h3>
+        {plTracks.length > 0 && (
+          <ListActions onPlay={() => playList(plTracks, 0)} onQueue={() => queueList(plTracks)} />
+        )}
         <div className="flex flex-col gap-1">
-          {plTracks.map((t) => (
-            <TrackRow key={t.id} track={t} onPlay={playImported} busy={resolvingId === t.id} />
+          {plTracks.map((t, i) => (
+            <TrackRow
+              key={t.id} track={t} busy={resolvingId === t.id}
+              onPlay={() => playList(plTracks, i)} onQueue={() => queueOne(t)}
+            />
           ))}
         </div>
       </div>
@@ -325,9 +365,13 @@ export default function SpotifyPanel() {
               <h3 className="text-sm font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
                 Liked Songs
               </h3>
+              <ListActions onPlay={() => playList(liked, 0)} onQueue={() => queueList(liked)} />
               <div className="flex flex-col gap-1">
-                {liked.map((t) => (
-                  <TrackRow key={t.id} track={t} onPlay={playImported} busy={resolvingId === t.id} />
+                {liked.map((t, i) => (
+                  <TrackRow
+                    key={t.id} track={t} busy={resolvingId === t.id}
+                    onPlay={() => playList(liked, i)} onQueue={() => queueOne(t)}
+                  />
                 ))}
               </div>
             </div>

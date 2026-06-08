@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../../store/playerStore";
 import { useAuthStore } from "../../store/authStore";
-import { historyApi, musicApi } from "../../services/api";
+import { historyApi, musicApi, spotifyApi } from "../../services/api";
 import type { Song } from "../../types";
 import YouTubePlayer from "./YouTubePlayer";
 import NowPlayingScreen from "./NowPlayingScreen";
@@ -27,6 +27,7 @@ export default function PlayerBar() {
 
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const registerRadioRefill = usePlayerStore((s) => s.registerRadioRefill);
+  const registerImportResolver = usePlayerStore((s) => s.registerImportResolver);
 
   // Hands-free voice control — same toggle as Now Playing, surfaced here so it's
   // reachable without opening the full screen. The toast explains the commands
@@ -53,6 +54,15 @@ export default function PlayerBar() {
       }
     });
   }, [registerRadioRefill]);
+
+  // Lazy import resolver: the store calls this to turn a pending Spotify-imported
+  // track into a playable YouTube song (cached server-side after first match).
+  useEffect(() => {
+    registerImportResolver(async (importedTrackId: number): Promise<Song> => {
+      const { data } = await spotifyApi.resolve(importedTrackId);
+      return data as Song;
+    });
+  }, [registerImportResolver]);
 
   // Media Session (lock-screen controls) is owned by useMediaSession() inside
   // YouTubePlayer — intentionally NOT duplicated here (the old copy bound both

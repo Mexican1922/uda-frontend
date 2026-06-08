@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Song, RepeatMode, SyncDevice, SyncCommand, RemoteSnapshot } from "../types";
+import type { Song, RepeatMode, SyncDevice, SyncCommand, RemoteSnapshot, PendingImport } from "../types";
 import { getDeviceInfo } from "../services/device";
 
 interface AlbumArtBounds {
@@ -83,6 +83,19 @@ interface PlayerState {
   registerRadioRefill: (fn: (artist: string) => Promise<Song[]>) => void;
   _tryEndlessRefill: () => void;
 
+  // ── Lazy-matched imports (Spotify) ──
+  // Imported tracks have no YouTube id until played. We keep the not-yet-played
+  // tail here and resolve each to a real Song as it's reached (one prefetched
+  // ahead), so a big playlist never burns the daily search quota up front.
+  pendingImports: PendingImport[];
+  importBusy: boolean;
+  _resolveImport: ((importedTrackId: number) => Promise<Song>) | null;
+  registerImportResolver: (fn: (importedTrackId: number) => Promise<Song>) => void;
+  playImports: (items: PendingImport[], startIndex?: number) => void;
+  queueImports: (items: PendingImport[]) => void;
+  _prefetchImport: () => void;            // resolve next import, append to queue
+  _pullNextImportAndPlay: () => void;     // resolve next import and play it now
+
   // Actions
   playSong: (song: Song, queue?: Song[]) => void;
   playQueue: (songs: Song[], startIndex?: number) => void;
@@ -137,6 +150,91 @@ export const usePlayerStore = create<PlayerState>()(
   endlessBusy: false,
   _radioRefill: null,
   registerRadioRefill: (fn) => set({ _radioRefill: fn }),
+
+  pendingImports: [],
+  importBusy: false,
+  _resolveImport: null,
+  registerImportResolver: (fn) => set({ _resolveImport: fn }),
+
+  // Start playing an imported list from startIndex. Resolves the first track,
+  // plays it as a fresh queue, and keeps the rest pending for lazy resolution.
+  playImports: (items, startIndex = 0) => {
+    const list = items.slice(startIndex);
+    if (!list.length) return;
+    const { _resolveImport, showToast } = get();
+    if (!_resolveImport) return;
+    const [first, ...rest] = list;
+    set({
+      pendingImports: rest,
+      importBusy: true,
+      endlessArtist: null, endlessPool: [], endlessUsed: [],
+    });
+    _resolveImport(first.importedTrackId)
+      .then((song) => {
+        set({
+          queue: [song], currentIndex: 0, currentSong: song, isPlaying: true,
+          progress: 0, currentTime: 0, pendingSeek: null, importBusy: false,
+        });
+        get()._prefetchImport();   // resolve one ahead for a smooth hand-off
+      })
+      .catch(() => {
+        set({ importBusy: false });
+        showToast("Couldn't start that — try again");
+      });
+  },
+
+  // Append imported tracks after whatever is playing (lazy). Starts playback if
+  // nothing is playing yet.
+  queueImports: (items) => {
+    if (!items.length) return;
+    const { currentSong, pendingImports, showToast } = get();
+    if (!currentSong) { get().playImports(items, 0); return; }
+    set({ pendingImports: [...pendingImports, ...items] });
+    showToast(`Added ${items.length} to queue`);
+    // Make sure at least one is resolved and waiting in the visible up-next.
+    get()._prefetchImport();
+  },
+
+  // Resolve the next pending import and append it to the queue (no play change).
+  _prefetchImport: () => {
+    const { pendingImports, importBusy, _resolveImport } = get();
+    if (importBusy || !pendingImports.length || !_resolveImport) return;
+    const [next, ...rest] = pendingImports;
+    set({ importBusy: true });
+    _resolveImport(next.importedTrackId)
+      .then((song) => {
+        const cur = get();
+        const dupe = cur.queue.some((s) => s.youtube_id === song.youtube_id);
+        set({
+          queue: dupe ? cur.queue : [...cur.queue, song],
+          pendingImports: rest,
+          importBusy: false,
+        });
+      })
+      .catch(() => set({ pendingImports: rest, importBusy: false }));
+  },
+
+  // Resolve the next pending import and play it immediately (end-of-queue roll).
+  _pullNextImportAndPlay: () => {
+    const { pendingImports, importBusy, _resolveImport } = get();
+    if (importBusy || !pendingImports.length || !_resolveImport) return;
+    const [next, ...rest] = pendingImports;
+    set({ importBusy: true });
+    _resolveImport(next.importedTrackId)
+      .then((song) => {
+        const cur = get();
+        const queue = cur.queue.some((s) => s.youtube_id === song.youtube_id)
+          ? cur.queue : [...cur.queue, song];
+        const idx = queue.findIndex((s) => s.youtube_id === song.youtube_id);
+        set({
+          queue, pendingImports: rest, currentIndex: idx, currentSong: song,
+          isPlaying: true, progress: 0, currentTime: 0, pendingSeek: null,
+          importBusy: false,
+        });
+        get()._prefetchImport();
+      })
+      .catch(() => { set({ pendingImports: rest, importBusy: false }); get().nextSong(); });
+  },
 
   toast: null,
   showToast: (msg) => {
@@ -221,6 +319,7 @@ export const usePlayerStore = create<PlayerState>()(
       progress: 0,
       currentTime: 0,
       pendingSeek: null,
+      pendingImports: [],
     });
   },
 
@@ -233,6 +332,7 @@ export const usePlayerStore = create<PlayerState>()(
       progress: 0,
       currentTime: 0,
       pendingSeek: null,
+      pendingImports: [],
     });
   },
 
@@ -352,6 +452,11 @@ export const usePlayerStore = create<PlayerState>()(
       next = currentIndex + 1;
     } else if (repeatMode === "all") {
       next = 0;
+    } else if (get().pendingImports.length) {
+      // End of queue but there are imported tracks waiting — resolve the next
+      // one and roll on, so an imported playlist plays straight through.
+      get()._pullNextImportAndPlay();
+      return;
     } else {
       // End of queue — on an endless station, roll on to another artist
       // instead of stopping. Otherwise we're genuinely done.
@@ -476,6 +581,7 @@ export const usePlayerStore = create<PlayerState>()(
     set({
       queue: [], currentSong: null, isPlaying: false, currentIndex: 0,
       endlessArtist: null, endlessPool: [], endlessUsed: [],
+      pendingImports: [],
     }),
 
   setNowPlayingOpen: (open) => set({ isNowPlayingOpen: open }),
@@ -498,6 +604,7 @@ export const usePlayerStore = create<PlayerState>()(
         endlessArtist: s.endlessArtist,
         endlessPool: s.endlessPool,
         endlessUsed: s.endlessUsed,
+        pendingImports: s.pendingImports,
       }),
       // After restoring, force a stopped state: never resume mid-air on load.
       onRehydrateStorage: () => (state) => {

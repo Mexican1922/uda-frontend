@@ -79,6 +79,14 @@ export interface ImportedPlaylist {
   track_count: number;
 }
 
+// A not-yet-resolved imported track queued for lazy YouTube matching on play.
+export interface PendingImport {
+  importedTrackId: number;
+  title: string;
+  artist: string;
+  thumbnail_url: string;
+}
+
 export interface SpotifyStatus {
   connected: boolean;
   configured: boolean;

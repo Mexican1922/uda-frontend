@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Play, Music2 } from "lucide-react";
+import { Play, Music2, ListEnd } from "lucide-react";
 import { libraryApi } from "../services/api";
 import { usePlayerStore } from "../store/playerStore";
 import type { Playlist, Song } from "../types";
@@ -9,7 +9,7 @@ import SongRow from "../components/ui/SongRow";
 export default function PlaylistPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { playSong } = usePlayerStore();
+  const { playSong, queueMix } = usePlayerStore();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,6 +41,11 @@ export default function PlaylistPage() {
     if (!playlist?.tracks?.length) return;
     const songs = playlist.tracks.map((t) => t.song);
     playSong(songs[0], songs);
+  };
+
+  const handleQueueAll = () => {
+    if (!playlist?.tracks?.length) return;
+    queueMix(playlist.tracks.map((t) => t.song));
   };
 
   if (loading) {
@@ -92,14 +97,24 @@ export default function PlaylistPage() {
             {playlist.song_count} {playlist.song_count === 1 ? "song" : "songs"}
           </p>
           {songs.length > 0 && (
-            <button
-              onClick={handlePlayAll}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#c9a84c] hover:bg-[#e8c97a] text-[#080808] font-semibold rounded-xl text-sm transition-colors shadow-lg"
-              style={{ fontFamily: "Syne, sans-serif" }}
-            >
-              <Play size={14} fill="currentColor" />
-              Play All
-            </button>
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={handlePlayAll}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#c9a84c] hover:bg-[#e8c97a] text-[#080808] font-semibold rounded-xl text-sm transition-colors shadow-lg"
+                style={{ fontFamily: "Syne, sans-serif" }}
+              >
+                <Play size={14} fill="currentColor" />
+                Play All
+              </button>
+              <button
+                onClick={handleQueueAll}
+                className="flex items-center gap-2 px-4 py-2.5 border border-[#2a2a2a] text-[#b8b0a0] hover:text-[#e8c97a] font-semibold rounded-xl text-sm transition-colors"
+                style={{ fontFamily: "Syne, sans-serif" }}
+              >
+                <ListEnd size={14} />
+                Add to queue
+              </button>
+            </div>
           )}
         </div>
       </div>
