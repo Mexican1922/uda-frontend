@@ -130,6 +130,24 @@ export const historyApi = {
     api.post("/history/", data),
 };
 
+// ── Integrations: Spotify ─────────────────────────────
+export const spotifyApi = {
+  status: () => api.get("/integrations/spotify/status/"),
+  // Returns { url } to send the user to Spotify's consent screen.
+  connect: () => api.get("/integrations/spotify/connect/"),
+  importLibrary: () => api.post("/integrations/spotify/import/"),
+  // Import a Spotify CSV export (Exportify/Soundiiz/TuneMyMusic) — no API/Premium
+  // needed. Sent as JSON text so it rides the default content type.
+  importCsv: (csv: string, playlist_name?: string) =>
+    api.post("/integrations/spotify/import-csv/", { csv, playlist_name }),
+  likedTracks: () => api.get("/integrations/spotify/tracks/"),
+  playlists: () => api.get("/integrations/spotify/playlists/"),
+  playlistTracks: (id: number) => api.get(`/integrations/spotify/playlists/${id}/`),
+  // Lazily match one imported track to a YouTube video; returns a playable Song.
+  resolve: (track_id: number) => api.post("/integrations/spotify/resolve/", { track_id }),
+  disconnect: () => api.post("/integrations/spotify/disconnect/"),
+};
+
 // ── Recommendations ───────────────────────────────────
 export const recommendationsApi = {
   get: (mood?: string) =>
