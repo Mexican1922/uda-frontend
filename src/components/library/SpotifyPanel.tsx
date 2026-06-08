@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { ChevronLeft, Loader2, Play, RefreshCw, Music2, Link2Off } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { ChevronLeft, Loader2, Play, RefreshCw, Music2, Link2Off, Upload } from "lucide-react";
 import { spotifyApi } from "../../services/api";
 import { usePlayerStore } from "../../store/playerStore";
 import type { Song, ImportedTrack, ImportedPlaylist, SpotifyStatus } from "../../types";
@@ -14,7 +14,7 @@ function SpotifyGlyph({ size = 18 }: { size?: number }) {
   );
 }
 
-/** Compact row for a not-yet-resolved Spotify track. */
+/** Compact row for a not-yet-resolved imported track. */
 function TrackRow({
   track, onPlay, busy,
 }: { track: ImportedTrack; onPlay: (t: ImportedTrack) => void; busy: boolean }) {
@@ -35,9 +35,11 @@ function TrackRow({
             <Music2 size={16} className="text-[#3a3a3a]" />
           </div>
         )}
-        <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 hover:bg-black/30 transition-colors">
-          {busy ? <Loader2 size={16} className="animate-spin text-white" /> : null}
-        </span>
+        {busy && (
+          <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+            <Loader2 size={16} className="animate-spin text-white" />
+          </span>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>
@@ -61,6 +63,7 @@ export default function SpotifyPanel() {
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   const [liked, setLiked] = useState<ImportedTrack[]>([]);
@@ -68,6 +71,9 @@ export default function SpotifyPanel() {
   const [openPl, setOpenPl] = useState<ImportedPlaylist | null>(null);
   const [plTracks, setPlTracks] = useState<ImportedTrack[]>([]);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [csvPlaylistName, setCsvPlaylistName] = useState("");
+
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const loadLibrary = useCallback(async () => {
     try {
@@ -77,8 +83,8 @@ export default function SpotifyPanel() {
     } catch { /* ignore */ }
   }, []);
 
-  // Initial status (+ library if already connected). Also surfaces the
-  // ?spotify=… result the OAuth callback redirects back with.
+  // Status + any already-imported library (CSV imports show even with no OAuth
+  // connection). Also surfaces the ?spotify=… result from the OAuth callback.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("spotify");
@@ -88,48 +94,66 @@ export default function SpotifyPanel() {
           : result === "denied" ? "Spotify connection cancelled"
           : "Couldn't connect Spotify — try again",
       );
-      // Clean the URL so a refresh doesn't re-toast.
       window.history.replaceState({}, "", window.location.pathname);
     }
-    spotifyApi.status()
-      .then(({ data }) => {
-        setStatus(data);
-        if (data.connected) loadLibrary();
-      })
-      .catch(() => setStatus({ connected: false, configured: false }))
-      .finally(() => setLoading(false));
+    Promise.all([
+      spotifyApi.status().then(({ data }) => setStatus(data)).catch(() => setStatus({ connected: false, configured: false })),
+      loadLibrary(),
+    ]).finally(() => setLoading(false));
   }, [loadLibrary, showToast]);
 
   const handleConnect = async () => {
     setConnecting(true);
     try {
       const { data } = await spotifyApi.connect();
-      window.location.href = data.url;          // off to Spotify's consent screen
+      window.location.href = data.url;
     } catch {
-      showToast("Spotify isn't available right now");
+      showToast("Spotify connect isn't available right now");
       setConnecting(false);
     }
   };
 
-  const handleImport = async () => {
+  const handleSync = async () => {
     setImporting(true);
     try {
       const { data } = await spotifyApi.importLibrary();
-      showToast(`Imported ${data.liked_imported} liked songs · ${data.playlists_imported} playlists`);
+      showToast(`Imported ${data.liked_imported} liked · ${data.playlists_imported} playlists`);
       await loadLibrary();
       const { data: st } = await spotifyApi.status();
       setStatus(st);
     } catch {
-      showToast("Import failed — try again");
+      showToast("Sync failed — try again");
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setUploading(true);
+    try {
+      const text = await file.text();
+      const { data } = await spotifyApi.importCsv(text, csvPlaylistName.trim() || undefined);
+      showToast(
+        data.imported > 0
+          ? `Imported ${data.imported} songs${data.skipped ? ` · skipped ${data.skipped}` : ""}`
+          : "No songs found in that file",
+      );
+      setCsvPlaylistName("");
+      await loadLibrary();
+    } catch {
+      showToast("Couldn't import that file — is it a Spotify CSV export?");
+    } finally {
+      setUploading(false);
     }
   };
 
   const handleDisconnect = async () => {
     try {
       await spotifyApi.disconnect();
-      setStatus({ connected: false, configured: true });
+      setStatus({ connected: false, configured: status?.configured ?? false });
       setLiked([]); setPlaylists([]); setOpenPl(null); setPlTracks([]);
       showToast("Spotify disconnected");
     } catch {
@@ -146,7 +170,7 @@ export default function SpotifyPanel() {
     } catch { showToast("Couldn't open that playlist"); }
   };
 
-  // Lazy resolve → play. The first play of a track spends one YouTube search;
+  // Lazy resolve → play. First play of a track spends one YouTube search;
   // afterwards the match is cached and instant.
   const playImported = async (track: ImportedTrack) => {
     if (resolvingId) return;
@@ -154,7 +178,6 @@ export default function SpotifyPanel() {
     try {
       const { data } = await spotifyApi.resolve(track.id);
       playSong(data as Song, [data as Song]);
-      // Reflect the now-resolved id locally so the row won't re-resolve.
       const patch = (arr: ImportedTrack[]) =>
         arr.map((t) => t.id === track.id ? { ...t, youtube_id: data.youtube_id, status: "matched" as const } : t);
       setLiked(patch); setPlTracks(patch);
@@ -183,143 +206,134 @@ export default function SpotifyPanel() {
     );
   }
 
-  // Spotify not set up on the server.
-  if (status && status.configured === false && !status.connected) {
-    return (
-      <div className="text-center py-16 px-6">
-        <SpotifyGlyph size={32} />
-        <p className="text-sm text-[#605850] mt-3">Spotify import isn't available yet.</p>
-      </div>
-    );
-  }
-
-  // Connected → import controls + library.
-  if (status?.connected) {
-    // Drill-down: a single opened playlist.
-    if (openPl) {
-      return (
-        <div>
-          <button
-            onClick={() => setOpenPl(null)}
-            className="flex items-center gap-1.5 text-xs text-[#b8b0a0] hover:text-[#e8c97a] mb-4 transition-colors"
-          >
-            <ChevronLeft size={14} /> All Spotify playlists
-          </button>
-          <h3 className="text-base font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
-            {openPl.name}
-          </h3>
-          <div className="flex flex-col gap-1">
-            {plTracks.map((t) => (
-              <TrackRow key={t.id} track={t} onPlay={playImported} busy={resolvingId === t.id} />
-            ))}
-          </div>
-        </div>
-      );
-    }
-
+  // Playlist drill-down.
+  if (openPl) {
     return (
       <div>
-        {/* Connected header */}
-        <div className="flex items-center gap-3 mb-5 p-3 rounded-xl bg-[#111111] border border-[#2a2a2a]">
-          <SpotifyGlyph size={22} />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#f5f0e8]" style={{ fontFamily: "Syne, sans-serif" }}>
-              Spotify connected
-            </p>
-            <p className="text-xs text-[#605850]">
-              {status.liked_count ?? 0} liked · {status.playlist_count ?? 0} playlists
-            </p>
-          </div>
-          <button
-            onClick={handleImport}
-            disabled={importing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#080808] disabled:opacity-60"
-            style={{ background: SPOTIFY_GREEN, fontFamily: "Syne, sans-serif" }}
-          >
-            {importing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            {importing ? "Importing…" : "Sync"}
-          </button>
-          <button
-            onClick={handleDisconnect}
-            title="Disconnect Spotify"
-            className="p-1.5 text-[#605850] hover:text-[#be123c] transition-colors"
-          >
-            <Link2Off size={15} />
-          </button>
+        <button
+          onClick={() => setOpenPl(null)}
+          className="flex items-center gap-1.5 text-xs text-[#b8b0a0] hover:text-[#e8c97a] mb-4 transition-colors"
+        >
+          <ChevronLeft size={14} /> All imported playlists
+        </button>
+        <h3 className="text-base font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
+          {openPl.name}
+        </h3>
+        <div className="flex flex-col gap-1">
+          {plTracks.map((t) => (
+            <TrackRow key={t.id} track={t} onPlay={playImported} busy={resolvingId === t.id} />
+          ))}
         </div>
-
-        {liked.length === 0 && playlists.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-sm text-[#605850]">Tap <span className="text-[#e8c97a]">Sync</span> to import your Liked Songs and playlists.</p>
-          </div>
-        ) : (
-          <>
-            {/* Playlists */}
-            {playlists.length > 0 && (
-              <div className="mb-7">
-                <h3 className="text-sm font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
-                  Playlists from Spotify
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {playlists.map((pl) => (
-                    <button
-                      key={pl.id}
-                      onClick={() => openPlaylist(pl)}
-                      className="text-left group"
-                    >
-                      <div className="relative w-full aspect-square rounded-xl overflow-hidden mb-2 bg-[#1a1a1a]">
-                        {pl.image_url ? (
-                          <img src={pl.image_url} alt={pl.name} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center"><Music2 size={28} className="text-[#2a2a2a]" /></div>
-                        )}
-                      </div>
-                      <p className="text-xs font-medium text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{pl.name}</p>
-                      <p className="text-[11px] text-[#605850]">{pl.track_count} songs</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Liked songs */}
-            {liked.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
-                  Liked Songs
-                </h3>
-                <div className="flex flex-col gap-1">
-                  {liked.map((t) => (
-                    <TrackRow key={t.id} track={t} onPlay={playImported} busy={resolvingId === t.id} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
       </div>
     );
   }
 
-  // Configured but not connected → connect CTA.
+  const hasLibrary = liked.length > 0 || playlists.length > 0;
+
   return (
-    <div className="text-center py-14 px-6">
-      <SpotifyGlyph size={36} />
-      <p className="text-base font-semibold text-[#f5f0e8] mt-4 mb-1" style={{ fontFamily: "Syne, sans-serif" }}>
-        Bring your Spotify library
-      </p>
-      <p className="text-sm text-[#605850] mb-6 max-w-xs mx-auto">
-        Import your Liked Songs and playlists. They play here through Ụda — no Spotify Premium needed.
-      </p>
-      <button
-        onClick={handleConnect}
-        disabled={connecting}
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-[#080808] disabled:opacity-60"
-        style={{ background: SPOTIFY_GREEN, fontFamily: "Syne, sans-serif" }}
-      >
-        {connecting ? <Loader2 size={15} className="animate-spin" /> : <SpotifyGlyph size={16} />}
-        Connect Spotify
-      </button>
+    <div>
+      {/* ── Import from CSV (works on a free Spotify account) ──────────────── */}
+      <div className="mb-5 p-4 rounded-xl bg-[#111111] border border-[#2a2a2a]">
+        <div className="flex items-center gap-2.5 mb-1">
+          <SpotifyGlyph size={20} />
+          <p className="text-sm font-semibold text-[#f5f0e8]" style={{ fontFamily: "Syne, sans-serif" }}>
+            Import from Spotify
+          </p>
+        </div>
+        <p className="text-xs text-[#605850] mb-3 leading-relaxed">
+          Export your songs to CSV with a free tool (Exportify, Soundiiz or TuneMyMusic),
+          then upload it here. They play through Ụda — no Spotify Premium needed.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={csvPlaylistName}
+            onChange={(e) => setCsvPlaylistName(e.target.value)}
+            placeholder="Playlist name (optional — blank = Liked)"
+            className="flex-1 bg-[#080808] border border-[#2a2a2a] rounded-lg px-3 py-2 text-xs text-[#f5f0e8] placeholder-[#3a3a3a] focus:outline-none focus:border-[#c9a84c] transition-colors"
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-[#080808] disabled:opacity-60"
+            style={{ background: SPOTIFY_GREEN, fontFamily: "Syne, sans-serif" }}
+          >
+            {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+            {uploading ? "Importing…" : "Upload CSV"}
+          </button>
+          <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+        </div>
+
+        {/* OAuth path — only if the server has Spotify configured (needs Premium). */}
+        {status?.connected ? (
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[#1f1f1f]">
+            <span className="text-[11px] text-[#605850] flex-1">Spotify account connected</span>
+            <button
+              onClick={handleSync}
+              disabled={importing}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-[#e8c97a] disabled:opacity-60"
+            >
+              {importing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Sync
+            </button>
+            <button onClick={handleDisconnect} title="Disconnect" className="p-1 text-[#605850] hover:text-[#be123c] transition-colors">
+              <Link2Off size={14} />
+            </button>
+          </div>
+        ) : status?.configured ? (
+          <button
+            onClick={handleConnect}
+            disabled={connecting}
+            className="mt-3 pt-3 border-t border-[#1f1f1f] w-full text-left text-[11px] text-[#605850] hover:text-[#e8c97a] transition-colors"
+          >
+            {connecting ? "Opening Spotify…" : "Or connect a Spotify Premium account →"}
+          </button>
+        ) : null}
+      </div>
+
+      {/* ── Imported library ──────────────────────────────────────────────── */}
+      {!hasLibrary ? (
+        <div className="text-center py-10">
+          <p className="text-sm text-[#605850]">Your imported songs will appear here.</p>
+        </div>
+      ) : (
+        <>
+          {playlists.length > 0 && (
+            <div className="mb-7">
+              <h3 className="text-sm font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
+                Imported Playlists
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {playlists.map((pl) => (
+                  <button key={pl.id} onClick={() => openPlaylist(pl)} className="text-left group">
+                    <div className="relative w-full aspect-square rounded-xl overflow-hidden mb-2 bg-[#1a1a1a]">
+                      {pl.image_url ? (
+                        <img src={pl.image_url} alt={pl.name} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center"><Music2 size={28} className="text-[#2a2a2a]" /></div>
+                      )}
+                    </div>
+                    <p className="text-xs font-medium text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{pl.name}</p>
+                    <p className="text-[11px] text-[#605850]">{pl.track_count} songs</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {liked.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-[#f5f0e8] mb-3" style={{ fontFamily: "Syne, sans-serif" }}>
+                Liked Songs
+              </h3>
+              <div className="flex flex-col gap-1">
+                {liked.map((t) => (
+                  <TrackRow key={t.id} track={t} onPlay={playImported} busy={resolvingId === t.id} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
