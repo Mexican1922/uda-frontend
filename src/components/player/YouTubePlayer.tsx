@@ -26,6 +26,16 @@ export default function YouTubePlayer() {
   // Track the last seeked song so we don't double-seek on init
   const lastSongRef  = useRef<string | null>(null);
 
+  // Data saver: bias the stream to the smallest size in Audio mode (the video
+  // is hidden), and let YouTube auto-pick when actually watching in Video mode.
+  // setPlaybackQuality is a hint; combined with the 0×0 player it keeps audio
+  // playback lightweight on mobile data.
+  const applyDataQuality = (player: any) => {
+    try {
+      player.setPlaybackQuality(usePlayerStore.getState().isVideoMode ? "default" : "tiny");
+    } catch { /* older players may not expose it */ }
+  };
+
   // ── Load YouTube IFrame API once ─────────────────────────────────────────
   useEffect(() => {
     if (window.YT) return;
@@ -48,7 +58,13 @@ export default function YouTubePlayer() {
       if (playerRef.current) {
         // Player already exists — just load the new video
         isReadyRef.current = false; // will be set true again once PLAYING fires
-        playerRef.current.loadVideoById({ videoId: currentSong.youtube_id, startSeconds: startAt });
+        playerRef.current.loadVideoById({
+          videoId: currentSong.youtube_id,
+          startSeconds: startAt,
+          // Data saver: in Audio mode request the smallest stream (no picture
+          // shown anyway). YouTube treats this as a hint.
+          suggestedQuality: usePlayerStore.getState().isVideoMode ? "default" : "tiny",
+        });
         lastSongRef.current = currentSong.youtube_id;
         return;
       }
@@ -75,6 +91,7 @@ export default function YouTubePlayer() {
             lastSongRef.current = currentSong.youtube_id;
             e.target.setVolume(isMuted ? 0 : volume);
             if (usePlayerStore.getState().isPlaying) e.target.playVideo();
+            applyDataQuality(e.target);
             setDuration(e.target.getDuration());
           },
           onStateChange: (e: any) => {
@@ -84,6 +101,9 @@ export default function YouTubePlayer() {
 
             if (e.data === YTState.PLAYING) {
               isReadyRef.current = true;
+              // YouTube often resets quality when playback starts — re-apply the
+              // data-saver hint so Audio mode stays on the smallest stream.
+              applyDataQuality(e.target);
               setDuration(e.target.getDuration());
             }
             // CUED or UNSTARTED means a new video just loaded.
@@ -142,6 +162,12 @@ export default function YouTubePlayer() {
     if (isPlaying) playerRef.current.playVideo();
     else playerRef.current.pauseVideo();
   }, [isPlaying, isRemote]);
+
+  // ── Re-apply data-saver quality when toggling Audio/Video ────────────────
+  useEffect(() => {
+    if (!playerRef.current || !isReadyRef.current) return;
+    applyDataQuality(playerRef.current);
+  }, [isVideoMode]);
 
   // ── Sync volume ──────────────────────────────────────────────────────────
   useEffect(() => {
