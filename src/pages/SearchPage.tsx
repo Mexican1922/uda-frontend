@@ -63,6 +63,9 @@ export default function SearchPage() {
   const [searchError, setSearchError] = useState("");
   const [playlistSong, setPlaylistSong] = useState<Song | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [activeSuggest, setActiveSuggest] = useState(-1);
   const { playSong } = usePlayerStore();
   const showToast = usePlayerStore((s) => s.showToast);
   const isGuest = useAuthStore((s) => s.isGuest);
@@ -73,6 +76,33 @@ export default function SearchPage() {
 
   // Load recent searches on mount
   useEffect(() => { setRecentSearches(getRecentSearches()); }, []);
+
+  // Debounced type-ahead suggestions (skipped in AI mode and for short queries).
+  useEffect(() => {
+    if (isNL || query.trim().length < 2) { setSuggestions([]); return; }
+    const t = setTimeout(() => {
+      musicApi
+        .suggest(query.trim())
+        .then(({ data }) => setSuggestions(data.suggestions || []))
+        .catch(() => setSuggestions([]));
+    }, 180);
+    return () => clearTimeout(t);
+  }, [query, isNL]);
+
+  const pickSuggestion = (s: string) => {
+    setQuery(s);
+    setShowSuggest(false);
+    setActiveSuggest(-1);
+    runSearch(s, false);
+  };
+
+  const onSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggest || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveSuggest((i) => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveSuggest((i) => Math.max(i - 1, -1)); }
+    else if (e.key === "Enter" && activeSuggest >= 0) { e.preventDefault(); pickSuggestion(suggestions[activeSuggest]); }
+    else if (e.key === "Escape") { setShowSuggest(false); }
+  };
 
   const runSearch = useCallback(async (q: string, nl: boolean) => {
     if (!q.trim()) return;
@@ -112,6 +142,7 @@ export default function SearchPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuggest(false);
     runSearch(query, isNL);
   };
 
@@ -200,7 +231,11 @@ export default function SearchPage() {
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setShowSuggest(true); setActiveSuggest(-1); }}
+            onFocus={() => setShowSuggest(true)}
+            onBlur={() => setTimeout(() => setShowSuggest(false), 120)}
+            onKeyDown={onSearchKeyDown}
+            autoComplete="off"
             placeholder={
               isNL
                 ? "Describe what you want to hear…"
@@ -247,6 +282,27 @@ export default function SearchPage() {
           >
             {loading ? "…" : "Go"}
           </button>
+
+          {/* Type-ahead suggestions */}
+          {showSuggest && !isNL && suggestions.length > 0 && (
+            <ul className="absolute top-full left-0 right-0 mt-2 z-30 bg-[#141414] border border-[#2a2a2a] rounded-xl overflow-hidden shadow-2xl shadow-black/60 py-1">
+              {suggestions.map((s, i) => (
+                <li key={s}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); pickSuggestion(s); }}
+                    onMouseEnter={() => setActiveSuggest(i)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                      i === activeSuggest ? "bg-white/[0.06] text-[#f5f0e8]" : "text-[#b8b0a0] hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <Search size={14} className="text-[#3a3a3a] flex-shrink-0" />
+                    <span className="truncate">{s}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </form>
 
