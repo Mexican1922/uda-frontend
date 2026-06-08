@@ -35,22 +35,50 @@ function parseLrc(lrc: string): LrcLine[] {
   return lines.sort((a, b) => a.time - b.time);
 }
 
-async function fetchLyrics(title: string, artist: string) {
+function shapeLyrics(d: any) {
+  return {
+    synced: d?.syncedLyrics ? parseLrc(d.syncedLyrics) : [],
+    plain: d?.plainLyrics ?? "",
+  };
+}
+
+async function fetchLyrics(title: string, artist: string, duration?: number) {
+  const base = "https://lrclib.net/api";
+
+  // 1) Exact lookup — including duration dramatically improves the match
+  //    (avoids picking a different-length edit/live version → bad sync).
   try {
-    const res = await fetch(
-      `https://lrclib.net/api/get?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`,
-      { signal: AbortSignal.timeout(8000) }
-    );
-    if (res.status === 404) return { synced: [], plain: "" };
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const d = await res.json();
-    return {
-      synced: d.syncedLyrics ? parseLrc(d.syncedLyrics) : [],
-      plain: d.plainLyrics ?? "",
-    };
-  } catch {
-    return { synced: [], plain: "" };
-  }
+    const p = new URLSearchParams({ track_name: title, artist_name: artist });
+    if (duration && duration > 0) p.set("duration", String(Math.round(duration)));
+    const res = await fetch(`${base}/get?${p}`, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const out = shapeLyrics(await res.json());
+      if (out.synced.length || out.plain) return out;
+    }
+  } catch { /* fall through to search */ }
+
+  // 2) Fuzzy search fallback — boosts hit rate for African catalogues where the
+  //    exact artist/title rarely matches. Prefer a synced result with the
+  //    closest duration.
+  try {
+    const p = new URLSearchParams({ track_name: title, artist_name: artist });
+    const res = await fetch(`${base}/search?${p}`, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const arr = await res.json();
+      if (Array.isArray(arr) && arr.length) {
+        const best = arr
+          .map((d: any) => ({
+            d,
+            sync: d.syncedLyrics ? 1 : 0,
+            dd: duration ? Math.abs((d.duration || 0) - duration) : 0,
+          }))
+          .sort((a, b) => b.sync - a.sync || a.dd - b.dd)[0];
+        return shapeLyrics(best.d);
+      }
+    }
+  } catch { /* give up gracefully */ }
+
+  return { synced: [], plain: "" };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -168,7 +196,7 @@ export default function NowPlayingScreen({ onClose }: Props) {
     setLyricsLoading(true);
     setExpandedLine(null);
     setExplanations({});
-    fetchLyrics(currentSong.title, currentSong.artist).then(({ synced, plain }) => {
+    fetchLyrics(currentSong.title, currentSong.artist, currentSong.duration_seconds).then(({ synced, plain }) => {
       setSyncedLyrics(synced);
       setPlainLyrics(plain);
       setLyricsFound(synced.length > 0 || plain.length > 0);
