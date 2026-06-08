@@ -27,13 +27,24 @@ import AddToPlaylistModal from "../components/ui/AddToPlaylistModal";
 
 type RecordState = "idle" | "listening" | "processing";
 
+// African scenes — tapping runs a curated search.
 const BROWSE_CATEGORIES = [
-  { label: "Afrobeats",     colors: ["#c9a84c", "#6b3a0f"] },
-  { label: "Amapiano",      colors: ["#1a7a4a", "#0a3020"] },
-  { label: "R&B",           colors: ["#7c3aed", "#3b0764"] },
-  { label: "Hip-Hop",       colors: ["#be123c", "#4c0519"] },
-  { label: "Trending",      colors: ["#0369a1", "#082f49"] },
-  { label: "New Releases",  colors: ["#c2410c", "#431407"] },
+  { label: "Afrobeats",    query: "Afrobeats 2026 hits",        colors: ["#c9a84c", "#6b3a0f"] },
+  { label: "Amapiano",     query: "Amapiano 2026 mix",          colors: ["#1a7a4a", "#0a3020"] },
+  { label: "Highlife",     query: "Highlife music",             colors: ["#c2410c", "#431407"] },
+  { label: "Alté",         query: "Alté Nigeria",               colors: ["#7c3aed", "#3b0764"] },
+  { label: "Afro-soul",    query: "Afro soul",                  colors: ["#be123c", "#4c0519"] },
+  { label: "Bongo Flava",  query: "Bongo Flava 2026",           colors: ["#0369a1", "#082f49"] },
+  { label: "Gqom",         query: "Gqom South Africa",          colors: ["#065f46", "#022c22"] },
+  { label: "Hip-Hop",      query: "hip hop 2026",               colors: ["#92400e", "#451a03"] },
+];
+
+// Country charts — real most-popular music per market (backend /charts).
+const CHART_COUNTRIES = [
+  { code: "NG", label: "Nigeria",      flag: "🇳🇬" },
+  { code: "GH", label: "Ghana",        flag: "🇬🇭" },
+  { code: "ZA", label: "South Africa", flag: "🇿🇦" },
+  { code: "KE", label: "Kenya",        flag: "🇰🇪" },
 ];
 
 // SpeechRecognition has partial browser support — use any to avoid TS noise
@@ -103,6 +114,24 @@ export default function SearchPage() {
     e.preventDefault();
     runSearch(query, isNL);
   };
+
+  // Load a country's chart into the same results view as search.
+  const loadChart = useCallback(async (code: string, label: string) => {
+    setLoading(true);
+    setInterpreted("");
+    setSearchError("");
+    setHasSearched(true);
+    setQuery(label);
+    try {
+      const { data } = await musicApi.charts(code);
+      setResults(data.results ?? []);
+    } catch {
+      setResults([]);
+      setSearchError("Charts are unavailable right now — try again shortly.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const startVoice = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -376,12 +405,33 @@ export default function SearchPage() {
             </div>
           )}
 
+          {/* Charts by country */}
+          <p
+            className="text-sm font-semibold text-[#f5f0e8] mb-3"
+            style={{ fontFamily: "Syne, sans-serif" }}
+          >
+            Charts by country
+          </p>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 mb-7 pb-1">
+            {CHART_COUNTRIES.map((c) => (
+              <button
+                key={c.code}
+                onClick={() => loadChart(c.code, `${c.label} Top 30`)}
+                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border border-[#2a2a2a] text-[#b8b0a0] hover:text-[#e8c97a] hover:border-[#c9a84c44] transition-all"
+                style={{ fontFamily: "Syne, sans-serif" }}
+              >
+                <span className="text-base leading-none">{c.flag}</span>
+                {c.label}
+              </button>
+            ))}
+          </div>
+
           {/* Browse grid */}
           <p
             className="text-sm font-semibold text-[#f5f0e8] mb-4"
             style={{ fontFamily: "Syne, sans-serif" }}
           >
-            Browse
+            Browse scenes
           </p>
           <div className="grid grid-cols-2 gap-3">
             {BROWSE_CATEGORIES.map((cat) => {
@@ -395,7 +445,7 @@ export default function SearchPage() {
               return (
                 <button
                   key={cat.label}
-                  onClick={() => { setQuery(cat.label); runSearch(cat.label, false); }}
+                  onClick={() => { setQuery(cat.label); runSearch(cat.query, false); }}
                   className="relative h-20 rounded-xl overflow-hidden text-left focus:outline-none group"
                 >
                   <div
