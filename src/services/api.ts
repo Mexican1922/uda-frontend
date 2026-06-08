@@ -83,6 +83,9 @@ export const authApi = {
 export const musicApi = {
   search: (q: string, limit = 25) =>
     api.get("/music/search/", { params: { q, limit } }),
+  // Type-ahead suggestions (proxied YouTube autocomplete — no Data API quota).
+  suggest: (q: string) =>
+    api.get("/music/suggest/", { params: { q } }),
   trending: () =>
     api.get("/music/trending/"),
   charts: (country: string) =>
