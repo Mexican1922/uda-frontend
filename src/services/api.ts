@@ -130,6 +130,20 @@ export const historyApi = {
     api.post("/history/", data),
 };
 
+// ── Integrations: Spotify ─────────────────────────────
+export const spotifyApi = {
+  status: () => api.get("/integrations/spotify/status/"),
+  // Returns { url } to send the user to Spotify's consent screen.
+  connect: () => api.get("/integrations/spotify/connect/"),
+  importLibrary: () => api.post("/integrations/spotify/import/"),
+  likedTracks: () => api.get("/integrations/spotify/tracks/"),
+  playlists: () => api.get("/integrations/spotify/playlists/"),
+  playlistTracks: (id: number) => api.get(`/integrations/spotify/playlists/${id}/`),
+  // Lazily match one imported track to a YouTube video; returns a playable Song.
+  resolve: (track_id: number) => api.post("/integrations/spotify/resolve/", { track_id }),
+  disconnect: () => api.post("/integrations/spotify/disconnect/"),
+};
+
 // ── Recommendations ───────────────────────────────────
 export const recommendationsApi = {
   get: (mood?: string) =>

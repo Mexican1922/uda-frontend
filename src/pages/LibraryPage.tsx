@@ -7,8 +7,9 @@ import { useAuthStore } from "../store/authStore";
 import type { Playlist, SavedSong, Song } from "../types";
 import SongRow from "../components/ui/SongRow";
 import GuestPrompt from "../components/ui/GuestPrompt";
+import SpotifyPanel from "../components/library/SpotifyPanel";
 
-type Tab = "songs" | "playlists";
+type Tab = "songs" | "playlists" | "spotify";
 
 export default function LibraryPage() {
   const [tab, setTab] = useState<Tab>("songs");
@@ -112,7 +113,7 @@ export default function LibraryPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-[#111111] rounded-xl p-1 w-fit">
-        {(["songs", "playlists"] as Tab[]).map((t) => (
+        {(["songs", "playlists", "spotify"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -125,13 +126,17 @@ export default function LibraryPage() {
           >
             {t === "songs"
               ? `Songs${savedSongs.length > 0 ? ` (${savedSongs.length})` : ""}`
-              : "Playlists"}
+              : t === "playlists"
+                ? "Playlists"
+                : "Spotify"}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      {loading ? (
+      {tab === "spotify" ? (
+        <SpotifyPanel />
+      ) : loading ? (
         <LoadingSkeleton />
       ) : tab === "songs" ? (
         songs.length > 0 ? (

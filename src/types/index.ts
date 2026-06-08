@@ -56,6 +56,37 @@ export interface SavedSong {
   saved_at: string;
 }
 
+// ── Spotify import ───────────────────────────────────────────────────────────
+export interface ImportedTrack {
+  id: number;
+  spotify_id: string;
+  title: string;
+  artist: string;
+  album: string;
+  image_url: string;
+  source: "liked" | "playlist";
+  youtube_id: string;          // "" until resolved
+  status: "pending" | "matched" | "unavailable";
+  added_at: string | null;
+  position: number;
+}
+
+export interface ImportedPlaylist {
+  id: number;
+  spotify_id: string;
+  name: string;
+  image_url: string;
+  track_count: number;
+}
+
+export interface SpotifyStatus {
+  connected: boolean;
+  configured: boolean;
+  liked_count?: number;
+  playlist_count?: number;
+  last_import_at?: string | null;
+}
+
 export interface AuthResponse {
   user: User;
   access: string;
