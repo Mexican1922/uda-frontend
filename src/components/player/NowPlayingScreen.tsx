@@ -91,10 +91,11 @@ export default function NowPlayingScreen({ onClose }: Props) {
   const {
     currentSong, isPlaying, progress, currentTime, duration,
     repeatMode, isShuffled, volume, isMuted, isVideoMode,
-    queue, currentIndex,
+    queue, currentIndex, userQueue,
     voiceEnabled, voiceSupported, voiceListening, toggleVoice,
     togglePlay, nextSong, prevSong, toggleRepeat, toggleShuffle,
     seekTo, setVolume, toggleMute, toggleVideoMode, jumpTo, removeFromQueue,
+    jumpToUser, removeFromUserQueue,
     setNowPlayingOpen, setAlbumArtBounds,
   } = usePlayerStore();
   const showToast = usePlayerStore((s) => s.showToast);
@@ -667,61 +668,77 @@ export default function NowPlayingScreen({ onClose }: Props) {
                          : <Play size={16} className="text-[#e8c97a] flex-shrink-0" fill="currentColor" />}
             </div>
 
-            {/* Up next */}
-            <div className="flex items-center justify-between mb-2 px-1">
-              <p className="text-[11px] text-[#605850] uppercase tracking-widest">Up next</p>
-              {queue.length - currentIndex - 1 > 0 && (
-                <span className="text-[11px] text-[#3a3a3a]">{queue.length - currentIndex - 1} in queue</span>
-              )}
-            </div>
+            {/* Up next — two tiers: manual queue first, then the context. */}
+            {(() => {
+              const contextUpNext = queue.slice(currentIndex + 1);
+              const total = userQueue.length + contextUpNext.length;
+              const openArtist = (name: string) => { onClose(); navigate(`/artist/${encodeURIComponent(name)}`); };
 
-            {queue.length - currentIndex - 1 <= 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-[#111111] border border-[#2a2a2a] flex items-center justify-center mb-3">
-                  <ListMusic size={24} className="text-[#2a2a2a]" />
-                </div>
-                <p className="text-[#605850] text-sm font-medium">Nothing up next</p>
-                <p className="text-[#3a3a3a] text-xs mt-1 max-w-[15rem]">
-                  Tap the menu on any song to add it here or play it next.
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                {queue.slice(currentIndex + 1).map((song, i) => {
-                  const realIndex = currentIndex + 1 + i;
-                  return (
-                    <div
-                      key={`${song.youtube_id}-${realIndex}`}
-                      onClick={() => jumpTo(realIndex)}
-                      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-white/[0.04] transition-colors select-none"
-                    >
-                      <span className="w-5 text-center text-xs text-[#3a3a3a] tabular-nums flex-shrink-0 group-hover:hidden">{i + 1}</span>
-                      <span className="w-5 hidden group-hover:flex items-center justify-center flex-shrink-0 text-[#e8c97a]">
-                        <Play size={11} fill="currentColor" />
-                      </span>
-                      <img src={song.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{song.title}</p>
-                        <span
-                          role="link"
-                          onClick={(e) => goToArtist(e, song.artist)}
-                          className="text-xs text-[#605850] hover:text-[#e8c97a] truncate mt-0.5 block w-fit max-w-full transition-colors"
-                        >
-                          {song.artist}
-                        </span>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeFromQueue(realIndex); }}
-                        title="Remove from queue"
-                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-[#3a3a3a] hover:text-[#f87171] active:scale-90 p-1 flex-shrink-0"
-                      >
-                        <X size={15} />
-                      </button>
+              if (total === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-[#111111] border border-[#2a2a2a] flex items-center justify-center mb-3">
+                      <ListMusic size={24} className="text-[#2a2a2a]" />
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <p className="text-[#605850] text-sm font-medium">Nothing up next</p>
+                    <p className="text-[#3a3a3a] text-xs mt-1 max-w-[15rem]">
+                      Tap the menu on any song to add it here or play it next.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  {/* Manual queue — survives switching to a new artist/album */}
+                  {userQueue.length > 0 && (
+                    <>
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <p className="text-[11px] text-[#605850] uppercase tracking-widest">Next in queue</p>
+                        <span className="text-[11px] text-[#3a3a3a]">{userQueue.length}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 mb-6">
+                        {userQueue.map((song, i) => (
+                          <QueueRow
+                            key={`uq-${song.youtube_id}-${i}`}
+                            song={song} label={i + 1}
+                            onPlay={() => jumpToUser(i)}
+                            onRemove={() => removeFromUserQueue(i)}
+                            onArtist={openArtist}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Context — replaced when you Play something new */}
+                  {contextUpNext.length > 0 && (
+                    <>
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <p className="text-[11px] text-[#605850] uppercase tracking-widest">
+                          {userQueue.length > 0 ? "Next up" : "Up next"}
+                        </p>
+                        <span className="text-[11px] text-[#3a3a3a]">{contextUpNext.length}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        {contextUpNext.map((song, i) => {
+                          const realIndex = currentIndex + 1 + i;
+                          return (
+                            <QueueRow
+                              key={`${song.youtube_id}-${realIndex}`}
+                              song={song} label={i + 1}
+                              onPlay={() => jumpTo(realIndex)}
+                              onRemove={() => removeFromQueue(realIndex)}
+                              onArtist={openArtist}
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -733,6 +750,40 @@ export default function NowPlayingScreen({ onClose }: Props) {
       {shareLyric && (
         <ShareSheet song={currentSong} lyricLine={shareLyric} onClose={() => setShareLyric(null)} />
       )}
+    </div>
+  );
+}
+
+// ── Queue row (used for both manual + context up-next lists) ──────────────────
+function QueueRow({ song, label, onPlay, onRemove, onArtist }: {
+  song: Song; label: number; onPlay: () => void; onRemove: () => void; onArtist: (name: string) => void;
+}) {
+  return (
+    <div
+      onClick={onPlay}
+      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-white/[0.04] transition-colors select-none"
+    >
+      <span className="w-5 text-center text-xs text-[#3a3a3a] tabular-nums flex-shrink-0 group-hover:hidden">{label}</span>
+      <span className="w-5 hidden group-hover:flex items-center justify-center flex-shrink-0 text-[#e8c97a]">
+        <Play size={11} fill="currentColor" />
+      </span>
+      <img src={song.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-[#f5f0e8] truncate" style={{ fontFamily: "Syne, sans-serif" }}>{song.title}</p>
+        <button
+          onClick={(e) => { e.stopPropagation(); onArtist(song.artist); }}
+          className="text-xs text-[#605850] hover:text-[#e8c97a] truncate mt-0.5 block w-fit max-w-full transition-colors text-left"
+        >
+          {song.artist}
+        </button>
+      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        title="Remove from queue"
+        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-[#3a3a3a] hover:text-[#f87171] active:scale-90 p-1 flex-shrink-0"
+      >
+        <X size={15} />
+      </button>
     </div>
   );
 }

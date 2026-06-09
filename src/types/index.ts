@@ -131,6 +131,7 @@ export interface RemoteSnapshot {
   duration: number;
   queue: Song[];
   currentIndex: number;
+  userQueue?: Song[];
   repeatMode: RepeatMode;
   isShuffled: boolean;
   isVideoMode: boolean;
