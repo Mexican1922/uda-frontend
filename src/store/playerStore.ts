@@ -328,7 +328,13 @@ export const usePlayerStore = create<PlayerState>()(
       progress: 0,
       currentTime: 0,
       pendingSeek: null,
+      // A deliberate Play is a clean context switch: drop the previous queue,
+      // the endless-radio station, and any pending imports so playback doesn't
+      // roll back onto the old artist when this list ends.
       pendingImports: [],
+      endlessArtist: null,
+      endlessPool: [],
+      endlessUsed: [],
     });
   },
 
@@ -342,6 +348,9 @@ export const usePlayerStore = create<PlayerState>()(
       currentTime: 0,
       pendingSeek: null,
       pendingImports: [],
+      endlessArtist: null,
+      endlessPool: [],
+      endlessUsed: [],
     });
   },
 
