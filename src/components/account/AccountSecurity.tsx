@@ -27,7 +27,11 @@ export default function AccountSecurity() {
     if (newPw.length < 8) { setPwError("New password must be at least 8 characters."); return; }
     setPwBusy(true);
     try {
-      await authApi.changePassword(oldPw, newPw);
+      const { data } = await authApi.changePassword(oldPw, newPw);
+      // Backend rotates tokens (old sessions are revoked) — keep this client
+      // signed in by adopting the fresh pair.
+      if (data?.access) localStorage.setItem("uda_access", data.access);
+      if (data?.refresh) localStorage.setItem("uda_refresh", data.refresh);
       showToast("Password changed");
       setOpenPw(false); setOldPw(""); setNewPw("");
     } catch (e: any) {
