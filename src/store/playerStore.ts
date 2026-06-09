@@ -15,10 +15,15 @@ interface AlbumArtBounds {
 }
 
 interface PlayerState {
-  // Queue
+  // Queue — two tiers:
+  //  • queue/currentIndex = the CONTEXT (album/artist/playlist/radio); replaced
+  //    on a deliberate Play.
+  //  • userQueue = tracks the user manually queued (Add to queue / Play next);
+  //    plays before the context resumes and SURVIVES a context switch.
   queue: Song[];
   currentIndex: number;
   currentSong: Song | null;
+  userQueue: Song[];
 
   // Playback state
   isPlaying: boolean;
@@ -123,7 +128,9 @@ interface PlayerState {
   addToQueue: (song: Song) => void;
   playNext: (song: Song) => void;
   removeFromQueue: (index: number) => void;
+  removeFromUserQueue: (index: number) => void;
   jumpTo: (index: number) => void;
+  jumpToUser: (index: number) => void;
   clearQueue: () => void;
   setNowPlayingOpen: (open: boolean) => void;
   setAlbumArtBounds: (bounds: AlbumArtBounds | null) => void;
@@ -135,6 +142,7 @@ export const usePlayerStore = create<PlayerState>()(
   queue: [],
   currentIndex: 0,
   currentSong: null,
+  userQueue: [],
   isPlaying: false,
   isVideoMode: false,
   volume: 80,
@@ -293,6 +301,7 @@ export const usePlayerStore = create<PlayerState>()(
       progress: snap.duration > 0 ? (snap.currentTime / snap.duration) * 100 : 0,
       queue: snap.queue,
       currentIndex: snap.currentIndex,
+      userQueue: snap.userQueue ?? [],
       repeatMode: snap.repeatMode,
       isShuffled: snap.isShuffled,
       isVideoMode: snap.isVideoMode,
@@ -451,11 +460,24 @@ export const usePlayerStore = create<PlayerState>()(
   },
 
   nextSong: () => {
-    const { queue, currentIndex, repeatMode, isShuffled, isRemote, _commandSink } = get();
+    const { isRemote, _commandSink } = get();
     if (isRemote && _commandSink) {
       _commandSink({ action: "next" });
       return;
     }
+
+    // The manual queue plays before the context resumes.
+    const uq = get().userQueue;
+    if (uq.length) {
+      const [head, ...rest] = uq;
+      set({
+        userQueue: rest, currentSong: head, isPlaying: true,
+        progress: 0, currentTime: 0, pendingSeek: null,
+      });
+      return;
+    }
+
+    const { queue, currentIndex, repeatMode, isShuffled } = get();
     if (!queue.length) return;
 
     let next: number;
@@ -546,46 +568,44 @@ export const usePlayerStore = create<PlayerState>()(
         s.repeatMode === "off" ? "all" : s.repeatMode === "all" ? "one" : "off",
     })),
   toggleShuffle: () => set((s) => ({ isShuffled: !s.isShuffled })),
+  // Add to the END of the manual queue (survives context switches).
   addToQueue: (song) => {
-    const { queue, showToast } = get();
-    if (queue.some((s) => s.youtube_id === song.youtube_id)) {
+    const { userQueue, currentSong, showToast } = get();
+    if (!currentSong) { get().playSong(song); return; }
+    if (userQueue.some((s) => s.youtube_id === song.youtube_id)) {
       showToast("Already in queue");
       return;
     }
-    set({ queue: [...queue, song] });
+    set({ userQueue: [...userQueue, song] });
     showToast("Added to queue");
   },
 
-  // Insert a song to play right after the current track.
+  // Add to the FRONT of the manual queue — plays right after the current track.
   playNext: (song) => {
-    const { queue, currentIndex, currentSong, showToast } = get();
-    // Nothing playing yet — just start it.
-    if (!currentSong) {
-      set({ queue: [song], currentIndex: 0, currentSong: song, isPlaying: true, progress: 0, currentTime: 0, pendingSeek: null });
-      return;
-    }
-    // Drop any existing copy so we don't duplicate, then splice in after current.
-    const without = queue.filter((s) => s.youtube_id !== song.youtube_id);
-    // currentIndex may shift if the removed copy was before it.
-    let insertAt = without.findIndex((s) => s.youtube_id === currentSong.youtube_id);
-    insertAt = insertAt >= 0 ? insertAt + 1 : currentIndex + 1;
-    const next = [...without.slice(0, insertAt), song, ...without.slice(insertAt)];
-    const newCurrentIndex = next.findIndex((s) => s.youtube_id === currentSong.youtube_id);
-    set({ queue: next, currentIndex: newCurrentIndex >= 0 ? newCurrentIndex : currentIndex });
+    const { userQueue, currentSong, showToast } = get();
+    if (!currentSong) { get().playSong(song); return; }
+    const without = userQueue.filter((s) => s.youtube_id !== song.youtube_id);
+    set({ userQueue: [song, ...without] });
     showToast("Playing next");
   },
 
-  // Remove a song from the queue by index (can't remove the current track).
+  // Remove a song from the CONTEXT queue by index (can't remove the current track).
   removeFromQueue: (index) => {
     const { queue, currentIndex } = get();
     if (index < 0 || index >= queue.length || index === currentIndex) return;
     const next = queue.filter((_, i) => i !== index);
-    // Keep currentIndex pointing at the same song.
     const newIndex = index < currentIndex ? currentIndex - 1 : currentIndex;
     set({ queue: next, currentIndex: newIndex });
   },
 
-  // Jump straight to a queue position (tap an up-next item).
+  // Remove an item from the manual queue.
+  removeFromUserQueue: (index) => {
+    const { userQueue } = get();
+    if (index < 0 || index >= userQueue.length) return;
+    set({ userQueue: userQueue.filter((_, i) => i !== index) });
+  },
+
+  // Jump straight to a CONTEXT position (tap an up-next item).
   jumpTo: (index) => {
     const { queue, isRemote, _commandSink } = get();
     if (index < 0 || index >= queue.length) return;
@@ -597,9 +617,24 @@ export const usePlayerStore = create<PlayerState>()(
     set({ currentIndex: index, currentSong: song, isPlaying: true, progress: 0, currentTime: 0, pendingSeek: null });
   },
 
+  // Tap an item in the manual queue: play it now and drop the ones above it.
+  jumpToUser: (index) => {
+    const { userQueue, isRemote, _commandSink } = get();
+    if (index < 0 || index >= userQueue.length) return;
+    const song = userQueue[index];
+    if (isRemote && _commandSink) {
+      _commandSink({ action: "playSong", song, queue: [song] });
+      return;
+    }
+    set({
+      userQueue: userQueue.slice(index + 1),
+      currentSong: song, isPlaying: true, progress: 0, currentTime: 0, pendingSeek: null,
+    });
+  },
+
   clearQueue: () =>
     set({
-      queue: [], currentSong: null, isPlaying: false, currentIndex: 0,
+      queue: [], userQueue: [], currentSong: null, isPlaying: false, currentIndex: 0,
       endlessArtist: null, endlessPool: [], endlessUsed: [],
       pendingImports: [],
     }),
@@ -616,6 +651,7 @@ export const usePlayerStore = create<PlayerState>()(
         queue: s.queue,
         currentIndex: s.currentIndex,
         currentSong: s.currentSong,
+        userQueue: s.userQueue,
         currentTime: s.currentTime,
         repeatMode: s.repeatMode,
         isShuffled: s.isShuffled,
